@@ -1,0 +1,34 @@
+# Real OTS / report task IDs referenced by eval/expanded_labels.csv.
+# Pull with:
+#   python scripts/studio_pull.py --names @eval/expanded_ots_tasks.txt --out tasks_cache_expanded
+append-ledger-kiosk-training
+build-exhibit-impersonation-detector-pipeline
+cloud-cost-anomaly-auditor
+corrupted-ohlc-trading-aggregation-pipeline
+dra-calibration-integrity-pipeline
+factory-spool-timezone-boundary
+hpc-export-reconciliation
+schema-sidecar-migration
+seismic-telemetry-audit-20260506T011035Z-0b551c45
+stream-pointer-advancement
+booth-ledger-bisect
+compliance-spool-orchestrator
+concurrent-audit-processor
+ecp-auth-cascade
+edge-inference-controller
+edge-telemetry-correlation
+geothermal-microgrid-forecaster
+hpc-ledger-reconciliation-20260511T023831Z-d9568b64
+orchestrator-negative-cache-ttl
+maritime-callback-barrier-ledger
+broadcast-ingest-reconciler
+microgrid-auth-trailer-bundler
+author-bridge-entity-daemon
+maritime-log-witness
+mlflow-proxy-routing
+evidence-pipeline-combiner-bridge
+safetensors-compliance-kiosk
+stale-batch-pipeline
+berth-logistics-twin-sync
+booth-correlator-ingest
+air-gapped-kiosk-schema-gate

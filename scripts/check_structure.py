@@ -64,7 +64,7 @@ def check_task(name, root):
     if os.path.isfile(df):
         body = [ln for ln in read_text(df).splitlines()
                 if ln.strip() and not ln.strip().startswith("#")]
-        if body and not any(ln.upper().startswith("FROM") for ln in body):
+        if body and not any(ln.strip().upper().startswith("FROM") for ln in body):
             out.append(finding(
                 name, "structure", FAIL, "dockerfile-no-base-image",
                 detail="Dockerfile has no FROM instruction.",

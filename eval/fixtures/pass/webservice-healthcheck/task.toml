@@ -1,0 +1,16 @@
+schema_version = "1.1"
+[metadata]
+difficulty = "medium"
+category = "web-service"
+tags = ["python", "http", "healthcheck"]
+expert_time_estimate_min = 40
+junior_time_estimate_min = 120
+
+[verifier]
+timeout_sec = 300
+[agent]
+timeout_sec = 1800
+[environment]
+cpus = 1
+memory_mb = 4096
+allow_internet = false

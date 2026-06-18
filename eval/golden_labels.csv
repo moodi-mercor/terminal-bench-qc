@@ -1,5 +1,7 @@
 task,is_defect,expected_verdict,expected_title,kind,source,notes
 clean-records-etl,0,PASS,,fixture,synthetic,well-formed TB2 task; all gates clean
+hidden-truth-verifier-only,0,PASS,,fixture,synthetic,truth in source tests/.truth/ (verify-time mount only; not baked) — precision counterpart to truth-baked/reference-reads-truth; must NOT flag
+webservice-healthcheck,0,PASS,,fixture,synthetic,server launched correctly (nohup + stdout redirect + wait-for-port) — precision counterpart to backgrounded-daemon-no-redirect/server-defined-not-started; must NOT flag
 missing-solution,1,FAIL,missing-required-file,fixture,synthetic,no solution/solve.sh
 bad-metadata,1,FAIL,missing-agent-timeout,fixture,synthetic,missing [agent] timeout + seconds-as-minutes expert time + generic category/tags
 truth-baked,1,FAIL,truth-baked-verifier-reads,fixture,synthetic,answer baked to /opt/answer_truth.txt and read by verifier

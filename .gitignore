@@ -1,7 +1,14 @@
+node_modules/
 __pycache__/
 *.pyc
 .DS_Store
 .env
-
+eval/runs/
+/tmp/
+tasks_cache/
+tasks_cache_tb/
+tasks_cache_expanded/
+qc_out/
+qc_out_tb/
 references/
-.DS_Store
+findings_behavioral.json

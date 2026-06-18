@@ -210,6 +210,24 @@ def check_task(name, root):
                                fix="Raise memory_mb to what the workload needs, or use a smaller "
                                    "test workload/dataset."))
 
+    # internet flag vs what the agent is actually told to do. allow_internet governs
+    # the AGENT runtime (the verifier installs deps in its own sandbox), so key off
+    # the INSTRUCTION: if it tells the agent to download/fetch/use a remote service
+    # while internet is off, the task is likely unrunnable as specified.
+    allow_net = get(d, "environment.allow_internet")
+    if allow_net is False:
+        instr = read_text(p["instruction.md"]).lower()
+        NEEDS_NET = re.compile(r"(https?://|\bdownload\b|\bfetch\b.{0,20}\b(url|http|remote)|"
+                               r"hugging\s?face|from the internet|\bpip install\b.*\b(from|http))", re.I)
+        if NEEDS_NET.search(instr):
+            out.append(finding(name, "metadata", WARN, "internet-flag-contradiction",
+                               detail="allow_internet=false, but instruction.md tells the agent "
+                                      "to download/fetch from the network — the task may be "
+                                      "impossible to solve offline.",
+                               location="task.toml [environment]",
+                               fix="Set allow_internet=true if the task genuinely needs the "
+                                   "network, or vendor the resource into the image."))
+
     if not out:
         out.append(finding(name, "metadata", PASS, "metadata-ok"))
     return out

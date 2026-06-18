@@ -1,0 +1,51 @@
+task,is_defect,expected_verdict,expected_title,kind,source,notes
+clean-records-etl,0,PASS,,fixture,synthetic,well-formed TB2 clean control
+hidden-truth-verifier-only,0,PASS,,fixture,synthetic,truth is under tests/.truth and only visible at verifier time
+webservice-healthcheck,0,PASS,,fixture,synthetic,server launch is correctly nohup redirected and waited on
+missing-solution,1,FAIL,missing-required-file,fixture,synthetic,no solution/solve.sh
+bad-metadata,1,FAIL,missing-agent-timeout,fixture,synthetic,missing agent timeout plus seconds-as-minutes and generic metadata
+truth-baked,1,FAIL,truth-baked-verifier-reads,fixture,synthetic,answer is baked into an agent-visible path and read by verifier
+copies-solution,1,FAIL,dockerfile-copies-solution,fixture,synthetic,Dockerfile copies solution into the image
+reference-reads-truth,1,FAIL,reference-solve-reads-truth,fixture,synthetic,reference solve reads verifier expected output instead of producing it
+unconditional-reward,1,FAIL,unconditional-reward,fixture,synthetic,test.sh writes reward=1 without gating on verifier success
+append-ledger-kiosk-training,1,FAIL,brittle-false-reject-test,ots,run50-gt-audit,manual audit labels verifier defect
+build-exhibit-impersonation-detector-pipeline,1,FAIL,truth-baked-verifier-reads,ots,run50-gt-audit,baked answer leak plus untested required field
+cloud-cost-anomaly-auditor,1,FAIL,truth-baked-verifier-reads,ots,run50-gt-audit,baked hidden truth read by verifier
+corrupted-ohlc-trading-aggregation-pipeline,1,FAIL,brittle-overconstrained-verifier,ots,run50-gt-audit,manual audit labels brittle or overconstrained verifier
+dra-calibration-integrity-pipeline,1,FAIL,truth-baked-verifier-reads,ots,run50-gt-audit,baked valid-count truth read by verifier
+factory-spool-timezone-boundary,1,FAIL,instruction-environment-misalignment,ots,run50-gt-audit,manual audit labels instruction environment mismatch
+hpc-export-reconciliation,1,FAIL,instruction-test-misalignment,ots,run50-gt-audit,manual audit labels instruction test mismatch
+schema-sidecar-migration,1,FAIL,untested-requirement,ots,run50-gt-audit,manual audit labels required behavior not tested
+seismic-telemetry-audit-20260506T011035Z-0b551c45,1,FAIL,weak-verifier,ots,run50-gt-audit,manual audit labels weak verifier
+stream-pointer-advancement,1,FAIL,reward-hacking-untested-requirement,ots,run50-gt-audit,manual audit labels reward-hackable missing coverage
+booth-ledger-bisect,0,PASS,,ots,run50-gt-audit,manual audit clean control
+compliance-spool-orchestrator,0,PASS,,ots,run50-gt-audit,manual audit clean control
+concurrent-audit-processor,0,PASS,,ots,run50-gt-audit,manual audit clean control
+ecp-auth-cascade,0,PASS,,ots,run50-gt-audit,manual audit clean control
+edge-inference-controller,0,PASS,,ots,run50-gt-audit,manual audit clean control
+edge-telemetry-correlation,0,PASS,,ots,run50-gt-audit,manual audit clean control
+geothermal-microgrid-forecaster,0,PASS,,ots,run50-gt-audit,manual audit clean control
+hpc-ledger-reconciliation-20260511T023831Z-d9568b64,0,PASS,,ots,run50-gt-audit,manual audit clean control
+hf-model-inference,0,PASS,,public-tb,terminal-bench-core,public Terminal-Bench clean precision control
+oom,0,PASS,,public-tb,terminal-bench-core,public Terminal-Bench clean precision control
+hello-world,0,PASS,,public-tb,terminal-bench-core,public Terminal-Bench clean precision control
+pandas-etl,0,PASS,,public-tb,terminal-bench-core,public Terminal-Bench clean precision control
+solve-sudoku,0,PASS,,public-tb,terminal-bench-core,public Terminal-Bench clean precision control
+build-cython-ext,0,PASS,,public-tb,terminal-bench-core,public Terminal-Bench clean precision control
+broken-networking,0,PASS,,public-tb,terminal-bench-core,public Terminal-Bench clean precision control
+jsonl-aggregator,0,PASS,,public-tb,terminal-bench-core,public Terminal-Bench clean precision control
+sqlite-with-gcov,0,PASS,,public-tb,terminal-bench-core,public Terminal-Bench clean precision control
+train-bpe-tokenizer,0,PASS,,public-tb,terminal-bench-core,public Terminal-Bench clean precision control
+orchestrator-negative-cache-ttl,1,FAIL,server-defined-not-started,first5k-report,tbench-first5k,solve.sh defines CLI but never invokes ingest-orchestrator
+maritime-callback-barrier-ledger,1,FAIL,server-defined-not-started,first5k-report,tbench-first5k,solve.sh defines uvicorn server but omits launch line
+broadcast-ingest-reconciler,1,FAIL,server-defined-not-started,first5k-report,tbench-first5k,solve.sh sets up reconciler but never triggers checked work
+microgrid-auth-trailer-bundler,1,FAIL,server-defined-not-started,first5k-report,tbench-first5k,daemon registered but never started
+author-bridge-entity-daemon,1,FAIL,cmd-entrypoint-reliance,first5k-report,tbench-first5k,task relies on Docker CMD to start required daemon
+maritime-log-witness,1,FAIL,cmd-entrypoint-reliance,first5k-report,tbench-first5k,uvicorn server expected from Docker CMD not solve.sh
+mlflow-proxy-routing,1,FAIL,cmd-entrypoint-reliance,first5k-report,tbench-first5k,mlflow server expected from Docker CMD not solve.sh
+evidence-pipeline-combiner-bridge,1,FAIL,reference-solve-reads-truth,second5k-report,tbench-second5k,reference solve reads leaked truth path used by verifier
+safetensors-compliance-kiosk,1,FAIL,reference-solve-reads-truth,second5k-report,tbench-second5k,reference solve reads leaked truth path used by verifier
+stale-batch-pipeline,1,FAIL,reference-solve-reads-truth,second5k-report,tbench-second5k,reference solve reads leaked truth path used by verifier
+berth-logistics-twin-sync,1,FAIL,reference-solve-reads-truth,second5k-report,tbench-second5k,reference solve reads leaked truth path used by verifier
+booth-correlator-ingest,1,FAIL,reference-solve-reads-truth,second5k-report,tbench-second5k,reference solve reads leaked truth path used by verifier
+air-gapped-kiosk-schema-gate,1,FAIL,broad-pkill,second5k-report,tbench-second5k,report attributes sandbox termination to a likely broad pkill killing launcher
