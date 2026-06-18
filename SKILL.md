@@ -70,14 +70,19 @@ python scripts/run_static_qc.py tasks_cache --out-dir qc_out
 Writes per-gate findings JSON + `review-ssot.csv`, `review-ssot.md`,
 `defect-distribution.md` into `qc_out/`.
 
-### 3. Semantic QC (Layer 2) — dispatch one sub-agent per task
-Use the rubric + the **deep-dive routine (5 checks)** and ready-to-run prompt in
-`QC_GUIDE.md`. Hand each agent the task dir + its static findings; collect the
-returned JSON into `qc_out/`. The deep-dive covers instruction↔verifier
-alignment, comprehensive tests, hygiene, golden-patch correctness (identify the
-algorithm first, then compare), and task realism — all decidable by analysis.
-(Reward-hacking and environment-fairness need a real run, so they sit in the
-delivery-stage behavioral gate, not here.)
+### 3. Semantic QC (Layer 2) — fan out one review+verify sub-agent per task
+Run static first, then dispatch **one sub-agent per task, in parallel batches**
+(see "Sub-agent orchestration" in `QC_GUIDE.md`). Hand each agent the task dir +
+its static findings. Each agent does two jobs at once:
+- **Semantic deep-dive (5 checks)** — instruction↔verifier alignment, comprehensive
+  tests, hygiene, golden-patch correctness (name the algorithm, then compare), realism.
+- **Adversarial verification of the static findings** — try to refute each FAIL/WARN;
+  emit `verify-refuted` (false positive) or `verify-confirm` (real).
+
+Collect each agent's JSON into `qc_out/` and re-run `aggregate.py`: refuted false
+positives are auto-dropped (precision) and new semantic defects fold in (recall).
+This both scales review across many tasks and verifies static's own output — e.g.
+in testing it dropped a refuted leak FP and caught a gameable verifier static rated clean.
 
 ### 4. Aggregate everything
 ```bash
