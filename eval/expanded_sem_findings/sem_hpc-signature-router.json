@@ -1,0 +1,11 @@
+[
+  {
+    "task": "hpc-signature-router",
+    "area": "anti_cheat",
+    "severity": "FAIL",
+    "title": "truth-baked-verifier-reads",
+    "location": "environment/gen_fixtures.py:36; tests/verify_output.py:3",
+    "detail": "The build creates /var/lib/hpc/.truth/signatures.json in the agent-visible image, and the verifier reads that file as the hidden signature reference. The agent can inspect the expected signatures directly.",
+    "fix": "Relocate signatures.json to tests/.truth or generate the expected signatures during verifier setup from verifier-only inputs."
+  }
+]

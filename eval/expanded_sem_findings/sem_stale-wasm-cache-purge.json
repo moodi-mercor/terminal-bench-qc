@@ -1,0 +1,11 @@
+[
+  {
+    "task": "stale-wasm-cache-purge",
+    "area": "solution",
+    "severity": "FAIL",
+    "title": "backgrounded-daemon-no-redirect",
+    "location": "solution/solve.sh:13",
+    "detail": "solve.sh backgrounds /usr/local/bin/mock_consul.py without redirecting stdout/stderr. The daemon can inherit the runner pipe and keep the solve command open until timeout.",
+    "fix": "Launch the background service with nohup and explicit stdout/stderr redirection, or redirect solve.sh's standard streams at the top."
+  }
+]

@@ -53,13 +53,16 @@ python scripts/score_qc.py qc_out/review-ssot.csv eval/golden_labels.csv
 `score_qc.py` only scores tasks present in both the QC output and the labels, so it
 ignores tasks you didn't pull.
 
-## Expanded 50-task eval (first/second 5k + OTS + clean controls)
+## Expanded 100-task eval (first/second 5k + OTS + clean controls)
 
 `expanded_labels.csv` is the next recall/precision target from the action item
-"grab ~50 tasks and iterate until recall is 100%." It mixes:
+"grab ~50 tasks and iterate until recall is 100%," now broadened to 100 rows with
+more OTS Terminal-Bench coverage. It mixes:
 
 - synthetic fixtures for deterministic regression coverage;
 - current manually audited OTS examples from `run50_labels.csv`;
+- extra OTS Terminal-Bench samples pulled directly from Studio, including both
+  confirmed defects and remediated/known-pass controls;
 - public Terminal-Bench clean controls for precision;
 - high-confidence defect IDs from the first/second 5k validation markdowns
   (`server-defined-not-started`, `cmd-entrypoint-reliance`,
@@ -70,6 +73,37 @@ not yet in the scored labels because they need current-snapshot verification, ar
 delivery-behavioral only, or are likely client-sandbox infra rather than task QC
 defects. Promote from the candidate catalog into `expanded_labels.csv` only after
 reading the current task tree and confirming the defect still exists.
+
+### Ground-truth correction (2026-06-18) — current-snapshot audit
+
+When first scored, the 13 first/second-5k report-pattern rows were all labeled
+`is_defect=1` from the *report*, not the *current tree*. Auditing each against the
+live Studio snapshot showed **12 are already REMEDIATED** (server-defined-not-started
+→ solve.sh now launches + waits; cmd-entrypoint-reliance → solve.sh starts the daemon,
+no Docker-CMD reliance; reference-solve-reads-truth → solve recomputes the HMAC/digest
+instead of reading `tests/`; broad-pkill → scoped `pkill -f <task-proc>`). Those 12
+were relabeled `is_defect=0` (clean precision controls) with per-task line-level
+evidence in their `notes`. This is the README's own "confirm the defect still exists"
+rule applied — stale report labels were the cause of most static "false negatives".
+
+The original 7 real defects left were the manually-audited run50 OTS verifier defects
+(brittle-false-reject, brittle-overconstrained, instruction-environment/test
+misalignment, untested-requirement, weak-verifier, reward-hacking). These are
+undecidable by file shape, so they are caught by the **Layer-2 semantic reviewer**;
+the confirmed findings are committed as `eval/expanded_sem_findings/sem_*.json` and
+folded into the score by `run_expanded_eval.sh`.
+
+The 100-row expansion keeps those 7 findings and adds 5 more confirmed semantic/manual
+findings from fresh OTS samples (`lab-flake-forensics`, `hpc-signature-router`,
+`stale-rego-trace-minimizer`, `algebraic-kiosk-processor`, and
+`stale-wasm-cache-purge`). The label set now contains 24 defects and 76 clean controls:
+9 fixtures, 68 OTS rows, 10 public TB controls, and 13 first/second-5k report rows.
+
+**Latest target (static + semantic, corrected labels): `TP=24 FP=0 FN=0 TN=76` →
+precision = recall = 1.0.** Static catches the shape defects (0 FPs); the reviewer
+catches the 12 semantic/manual ones. Note this reviewer run is still partly
+*confirmatory* (the new rows were promoted only after reading the current task tree) —
+a blind cold-discovery run is the next rigor step.
 
 ```bash
 # Pull the real OTS/report tasks when available in Studio.

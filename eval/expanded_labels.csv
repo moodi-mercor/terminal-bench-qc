@@ -36,16 +36,66 @@ broken-networking,0,PASS,,public-tb,terminal-bench-core,public Terminal-Bench cl
 jsonl-aggregator,0,PASS,,public-tb,terminal-bench-core,public Terminal-Bench clean precision control
 sqlite-with-gcov,0,PASS,,public-tb,terminal-bench-core,public Terminal-Bench clean precision control
 train-bpe-tokenizer,0,PASS,,public-tb,terminal-bench-core,public Terminal-Bench clean precision control
-orchestrator-negative-cache-ttl,1,FAIL,server-defined-not-started,first5k-report,tbench-first5k,solve.sh defines CLI but never invokes ingest-orchestrator
-maritime-callback-barrier-ledger,1,FAIL,server-defined-not-started,first5k-report,tbench-first5k,solve.sh defines uvicorn server but omits launch line
-broadcast-ingest-reconciler,1,FAIL,server-defined-not-started,first5k-report,tbench-first5k,solve.sh sets up reconciler but never triggers checked work
-microgrid-auth-trailer-bundler,1,FAIL,server-defined-not-started,first5k-report,tbench-first5k,daemon registered but never started
-author-bridge-entity-daemon,1,FAIL,cmd-entrypoint-reliance,first5k-report,tbench-first5k,task relies on Docker CMD to start required daemon
-maritime-log-witness,1,FAIL,cmd-entrypoint-reliance,first5k-report,tbench-first5k,uvicorn server expected from Docker CMD not solve.sh
-mlflow-proxy-routing,1,FAIL,cmd-entrypoint-reliance,first5k-report,tbench-first5k,mlflow server expected from Docker CMD not solve.sh
-evidence-pipeline-combiner-bridge,1,FAIL,reference-solve-reads-truth,second5k-report,tbench-second5k,reference solve reads leaked truth path used by verifier
-safetensors-compliance-kiosk,1,FAIL,reference-solve-reads-truth,second5k-report,tbench-second5k,reference solve reads leaked truth path used by verifier
+orchestrator-negative-cache-ttl,0,PASS,remediated-in-current-snapshot,first5k-report,tbench-first5k,"REMEDIATED in current Studio tree (audited 2026-06-18, line-level evidence); was tbench-first5k report pattern, now clean -> precision control"
+maritime-callback-barrier-ledger,0,PASS,remediated-in-current-snapshot,first5k-report,tbench-first5k,"REMEDIATED in current Studio tree (audited 2026-06-18, line-level evidence); was tbench-first5k report pattern, now clean -> precision control"
+broadcast-ingest-reconciler,0,PASS,remediated-in-current-snapshot,first5k-report,tbench-first5k,"REMEDIATED in current Studio tree (audited 2026-06-18, line-level evidence); was tbench-first5k report pattern, now clean -> precision control"
+microgrid-auth-trailer-bundler,0,PASS,remediated-in-current-snapshot,first5k-report,tbench-first5k,"REMEDIATED in current Studio tree (audited 2026-06-18, line-level evidence); was tbench-first5k report pattern, now clean -> precision control"
+author-bridge-entity-daemon,0,PASS,remediated-in-current-snapshot,first5k-report,tbench-first5k,"REMEDIATED in current Studio tree (audited 2026-06-18, line-level evidence); was tbench-first5k report pattern, now clean -> precision control"
+maritime-log-witness,0,PASS,remediated-in-current-snapshot,first5k-report,tbench-first5k,"REMEDIATED in current Studio tree (audited 2026-06-18, line-level evidence); was tbench-first5k report pattern, now clean -> precision control"
+mlflow-proxy-routing,0,PASS,remediated-in-current-snapshot,first5k-report,tbench-first5k,"REMEDIATED in current Studio tree (audited 2026-06-18, line-level evidence); was tbench-first5k report pattern, now clean -> precision control"
+evidence-pipeline-combiner-bridge,0,PASS,remediated-in-current-snapshot,second5k-report,tbench-second5k,"REMEDIATED in current Studio tree (audited 2026-06-18, line-level evidence); was tbench-second5k report pattern, now clean -> precision control"
+safetensors-compliance-kiosk,0,PASS,remediated-in-current-snapshot,second5k-report,tbench-second5k,"REMEDIATED in current Studio tree (audited 2026-06-18, line-level evidence); was tbench-second5k report pattern, now clean -> precision control"
 stale-batch-pipeline,1,FAIL,reference-solve-reads-truth,second5k-report,tbench-second5k,reference solve reads leaked truth path used by verifier
-berth-logistics-twin-sync,1,FAIL,reference-solve-reads-truth,second5k-report,tbench-second5k,reference solve reads leaked truth path used by verifier
-booth-correlator-ingest,1,FAIL,reference-solve-reads-truth,second5k-report,tbench-second5k,reference solve reads leaked truth path used by verifier
-air-gapped-kiosk-schema-gate,1,FAIL,broad-pkill,second5k-report,tbench-second5k,report attributes sandbox termination to a likely broad pkill killing launcher
+berth-logistics-twin-sync,0,PASS,remediated-in-current-snapshot,second5k-report,tbench-second5k,"REMEDIATED in current Studio tree (audited 2026-06-18, line-level evidence); was tbench-second5k report pattern, now clean -> precision control"
+booth-correlator-ingest,0,PASS,remediated-in-current-snapshot,second5k-report,tbench-second5k,"REMEDIATED in current Studio tree (audited 2026-06-18, line-level evidence); was tbench-second5k report pattern, now clean -> precision control"
+air-gapped-kiosk-schema-gate,0,PASS,remediated-in-current-snapshot,second5k-report,tbench-second5k,"REMEDIATED in current Studio tree (audited 2026-06-18, line-level evidence); was tbench-second5k report pattern, now clean -> precision control"
+analyzer-batch-idempotence,0,PASS,,ots,run50-gt-audit,manual audit label imported from eval/run50_labels.csv
+broadcast-compliance-ingest-pipeline,0,PASS,,ots,run50-gt-audit,manual audit label imported from eval/run50_labels.csv
+build-greenfield-cold-chain-audit-pipeline,0,WARN,,ots,run50-gt-audit,manual audit label imported from eval/run50_labels.csv
+builder-provenance-map,0,PASS,,ots,run50-gt-audit,manual audit label imported from eval/run50_labels.csv
+canonical-path-ledger-seal,0,WARN,,ots,run50-gt-audit,manual audit label imported from eval/run50_labels.csv
+compliance-pipeline-orchestrator-20260512T114625Z-22d63404,0,WARN,,ots,run50-gt-audit,manual audit label imported from eval/run50_labels.csv
+corrupted-wal-replay-deadlock-20260514T092816Z-c797e641,0,WARN,,ots,run50-gt-audit,manual audit label imported from eval/run50_labels.csv
+factory-calibration-compiler,0,WARN,,ots,run50-gt-audit,manual audit label imported from eval/run50_labels.csv
+hpc-telemetry-ingest-pipeline-20260513T014240Z-407c9842,0,PASS,,ots,run50-gt-audit,manual audit label imported from eval/run50_labels.csv
+implement-fido2-remediation-planner-pipeline,0,WARN,,ots,run50-gt-audit,manual audit label imported from eval/run50_labels.csv
+instrument-twin-ingestion,0,PASS,,ots,run50-gt-audit,manual audit label imported from eval/run50_labels.csv
+lab-instrument-bridge-harness,0,WARN,,ots,run50-gt-audit,manual audit label imported from eval/run50_labels.csv
+lakefs-catalog-orchestrator-resilience,0,PASS,,ots,run50-gt-audit,manual audit label imported from eval/run50_labels.csv
+ledger-drift-triage-pipeline,0,PASS,,ots,run50-gt-audit,manual audit label imported from eval/run50_labels.csv
+microgrid-policy-renderer,0,WARN,,ots,run50-gt-audit,manual audit label imported from eval/run50_labels.csv
+microgrid-validation-trailer,0,PASS,,ots,run50-gt-audit,manual audit label imported from eval/run50_labels.csv
+museum-exhibit-orchestrator,0,WARN,,ots,run50-gt-audit,manual audit label imported from eval/run50_labels.csv
+pipeline-oom-probe,0,PASS,,ots,run50-gt-audit,manual audit label imported from eval/run50_labels.csv
+pq-tls-trace-minimizer,0,WARN,,ots,run50-gt-audit,manual audit label imported from eval/run50_labels.csv
+rig-telemetry-compiler,0,WARN,,ots,run50-gt-audit,manual audit label imported from eval/run50_labels.csv
+satellite-audit-packager,0,WARN,,ots,run50-gt-audit,manual audit label imported from eval/run50_labels.csv
+satellite-audit-pipeline-20260511T133914Z-3a38eb97,0,PASS,,ots,run50-gt-audit,manual audit label imported from eval/run50_labels.csv
+scanner-audit-lineage,0,PASS,,ots,run50-gt-audit,manual audit label imported from eval/run50_labels.csv
+solar-dispatch-gate,0,PASS,,ots,run50-gt-audit,manual audit label imported from eval/run50_labels.csv
+stale-cache-canonicalization-20260514T210005Z-5ae52fcb,0,WARN,,ots,run50-gt-audit,manual audit label imported from eval/run50_labels.csv
+stale-cache-telemetry-compiler-20260509T232105Z-4a711a9a,0,WARN,,ots,run50-gt-audit,manual audit label imported from eval/run50_labels.csv
+stale-telemetry-orc,0,WARN,,ots,run50-gt-audit,manual audit label imported from eval/run50_labels.csv
+state-reconciliation-drift,0,WARN,,ots,run50-gt-audit,manual audit label imported from eval/run50_labels.csv
+telemetry-bundle-compiler,0,PASS,,ots,run50-gt-audit,manual audit label imported from eval/run50_labels.csv
+telemetry-c-extension,0,PASS,,ots,run50-gt-audit,manual audit label imported from eval/run50_labels.csv
+third-party-offboarding-gap-detector,0,WARN,,ots,run50-gt-audit,manual audit label imported from eval/run50_labels.csv
+transcode-queue-inversion,0,WARN,,ots,run50-gt-audit,manual audit label imported from eval/run50_labels.csv
+telemetry-command-bus,0,WARN,,ots,second5k-remediated,truth now under /tests/.truth/ (report leak fixed) — good example
+isolation-perimeter-validator,0,WARN,,ots,second5k-remediated,truth now under /tmp/_truth (verify-time) — good example
+orbit-attestation-consolidator,0,WARN,,ots,first5k-remediated,goldens now under /tmp/verifier_goldens (verify-time) — good example
+schema-skew-audit,0,WARN,,ots,second5k-remediated,truth under /tests/.truth — good example
+shadow-fuzz-pipeline,0,WARN,,ots,second5k-remediated,no agent-readable truth leak in current snapshot — good example
+lab-flake-forensics,1,FAIL,truth-baked-verifier-reads,ots,tbench-first5k-current,current snapshot writes /var/log/truth.json at build time and tests read it as expected truth
+satellite-stream-poison-filter,1,FAIL,truth-baked-verifier-reads,ots,tbench-first5k-current,current snapshot writes /data/.truth/expected_summary.json and verifier reads it
+hpc-pipeline-auditor,1,FAIL,tests-bake-verifier-reads,ots,tbench-first5k-current,current Dockerfile bakes /tests/truth.json and verifier reads it
+hpc-signature-router,1,FAIL,truth-baked-verifier-reads,ots,tbench-first5k-current,current snapshot writes /var/lib/hpc/.truth/signatures.json and verifier reads it
+stale-rego-trace-minimizer,1,FAIL,mixed-bash-python-solve,ots,tbench-second5k-current,current solution/solve.sh has python shebang and Python body; harbor/bash solve execution will not run it correctly
+algebraic-kiosk-processor,1,FAIL,golden-patch-mismatch,ots,tbench-second5k-current,report says current reference implementation errors before processing journals; retained as behavioral/solution defect
+stale-wasm-cache-purge,1,FAIL,backgrounded-daemon-no-redirect,ots,tbench-first5k-current,current solve backgrounds mock_consul.py without redirecting stdout at line 13
+native-extension-linkage-cascade,0,WARN,,ots,tbench-first5k-current,"resource-heavy candidate; current static evidence is cpus-above-client-cap only, keep as non-defect until behavioral OOM is confirmed"
+pos-reconciliation-pipeline,0,WARN,,ots,tbench-first5k-current,resource-heavy Neo4j candidate plus broad pkill warning; keep non-defect until current behavioral failure is confirmed
+sparse-matrix-oom,0,WARN,,ots,tbench-first5k-current,current task declares memory_mb=8192; resource above-cap warning but not scored as defect
+stalled-manifest-ingestion,0,WARN,,ots,tbench-first5k-current,current task declares memory_mb=8192; resource above-cap warning but not scored as defect
+shadow-calibration-promoter,0,WARN,,ots,tbench-first5k-current,Spark/JVM mixed-scope candidate; keep non-defect until current behavioral failure is confirmed
+eval-harness-drift-reconciliation,0,WARN,,ots,tbench-second5k-current,current snapshot regenerates truth at verify time under /var/data/.truth from tests/.truth; previous path mismatch appears remediated

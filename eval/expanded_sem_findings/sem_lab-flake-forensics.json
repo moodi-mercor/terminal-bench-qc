@@ -1,0 +1,11 @@
+[
+  {
+    "task": "lab-flake-forensics",
+    "area": "anti_cheat",
+    "severity": "FAIL",
+    "title": "truth-baked-verifier-reads",
+    "location": "environment/setup_commands.sh:44; tests/test_outputs.py:22",
+    "detail": "The current snapshot generates /var/log/truth.json during image build and leaves it agent-visible. The verifier reads that same file as expected truth for record counts and derived totals, so an agent can read the answer file directly instead of solving the task.",
+    "fix": "Move the truth artifact under tests/.truth or regenerate it at verifier time, and ensure no expected-answer file remains in an agent-readable path."
+  }
+]

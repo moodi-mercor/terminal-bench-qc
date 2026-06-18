@@ -1,0 +1,11 @@
+[
+  {
+    "task": "algebraic-kiosk-processor",
+    "area": "solution",
+    "severity": "FAIL",
+    "title": "golden-patch-mismatch",
+    "location": "solution/solve.sh",
+    "detail": "The validation report identifies the reference Groebner-basis implementation as failing before processing the journal set. This is a golden-solution defect: the oracle path does not reliably satisfy its own verifier.",
+    "fix": "Repair the reference implementation and rerun oracle validation until the solution processes all journals and scores 1.0."
+  }
+]

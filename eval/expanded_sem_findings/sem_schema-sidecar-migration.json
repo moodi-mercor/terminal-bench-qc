@@ -1,0 +1,11 @@
+[
+  {
+    "task": "schema-sidecar-migration",
+    "area": "tests",
+    "severity": "FAIL",
+    "title": "untested-requirement",
+    "location": "instruction.md:7,15 (owner field) \u2014 no covering test",
+    "detail": "Instruction makes the manifest 'owner' field (mapped from /config/CODEOWNERS) a hard requirement, but no test verifies its presence or correctness; an agent could omit owner entirely and still score 100%. controller_id and manifest schema_version are also unasserted.",
+    "fix": "Add a test that validates each manifest element's owner against /config/CODEOWNERS."
+  }
+]

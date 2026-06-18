@@ -1,0 +1,11 @@
+[
+  {
+    "task": "hpc-export-reconciliation",
+    "area": "tests",
+    "severity": "FAIL",
+    "title": "instruction-test-misalignment",
+    "location": "instruction.md:9,18,25 vs tests/test_outputs.py:36-68 and solution/solve.sh:34,112",
+    "detail": "Grading tests read fixed /out paths but instruction says write to --output-dir; following the instruction with any other dir leaves /out empty and fails checks 3-7. Also instruction mandates schema_version=='v2' while golden solve emits '2.0' (golden-patch vs spec contradiction, unasserted).",
+    "fix": "Pin --output-dir in the instruction or have tests read the instructed dir; reconcile schema_version between instruction and golden solution and assert it."
+  }
+]

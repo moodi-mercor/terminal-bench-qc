@@ -1,0 +1,11 @@
+[
+  {
+    "task": "seismic-telemetry-audit-20260506T011035Z-0b551c45",
+    "area": "tests",
+    "severity": "FAIL",
+    "title": "weak-verifier",
+    "location": "tests/test_outputs.py:45,56,67,78,89,100",
+    "detail": "Verifier never checks counter correctness: checks 3/6/8 only assert len>400/450 (cardinality), check_4 only isinstance int, check_5 only >0 and distinct, check_7 only that some key has prefix pkt_hidden. A fabricated dict of 461 sequential positive ints with one pkt_hidden* key passes all 8 tests without running any LCG/ECC/Groebner validation.",
+    "fix": "Assert recovered counter values against an independently recomputed expected set, not just count/type/sign/uniqueness."
+  }
+]

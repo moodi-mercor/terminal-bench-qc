@@ -1,0 +1,11 @@
+[
+  {
+    "task": "stale-rego-trace-minimizer",
+    "area": "solution",
+    "severity": "FAIL",
+    "title": "mixed-bash-python-solve",
+    "location": "solution/solve.sh:1",
+    "detail": "The current solve.sh has a Python shebang and a Python body. The harness runs solve.sh as a shell script in this workflow, so the reference implementation is not a portable shell solve path and will fail before applying the intended fix.",
+    "fix": "Make solve.sh a real bash script that writes/runs a Python helper, or ensure the harness invokes the file as an executable Python script consistently."
+  }
+]

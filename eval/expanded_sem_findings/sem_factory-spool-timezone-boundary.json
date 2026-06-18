@@ -1,0 +1,11 @@
+[
+  {
+    "task": "factory-spool-timezone-boundary",
+    "area": "instructions",
+    "severity": "FAIL",
+    "title": "instruction-environment-misalignment",
+    "location": "instruction.md:9,67 vs environment/setup_commands.sh:248",
+    "detail": "Instruction tells the agent to validate against golden reference /app/specs/golden_nov4.json, but that file is never written to the agent container; it exists only at verify-time-mounted tests/.truth/golden_nov4.json. A faithful agent following the prescribed validation step hits a missing file.",
+    "fix": "Write golden_nov4.json into /app/specs/ at build time, or remove the instruction's reference to an agent-visible golden file."
+  }
+]

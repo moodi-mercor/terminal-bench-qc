@@ -1,0 +1,11 @@
+[
+  {
+    "task": "stream-pointer-advancement",
+    "area": "tests",
+    "severity": "FAIL",
+    "title": "reward-hacking-untested-requirement",
+    "location": "instruction.md:15-17 vs tests/test_outputs.py:32,90-97",
+    "detail": "Core requirement (exclude records where status!=COMPLETE or sha256(payload)!=hash) is unverified and reward-hackable. The only filtering assertions are negative ('bad_data'/'corrupted' not in output) but the served payload is byte-reversed, so those substrings can never appear regardless of filtering \u2014 vacuously true. An agent that skips filtering entirely passes all 4 tests (1.0). No source-grep/recompute defense guards the filtering path.",
+    "fix": "Add a positive assertion that invalid records are excluded using a held-out/mutated input the served-reversed transform cannot mask."
+  }
+]

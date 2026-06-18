@@ -1,0 +1,11 @@
+[
+  {
+    "task": "append-ledger-kiosk-training",
+    "area": "tests",
+    "severity": "FAIL",
+    "title": "brittle-false-reject-test",
+    "location": "tests/test_outputs.py:45",
+    "detail": "test_check_4 asserts output.strip()=='5004' (exact magic count); a doc-faithful solution that drops NaN-corrupted telemetry rows yields 5002 and is wrongly rejected. test_check_6 similarly pins ==7013.",
+    "fix": "Assert the documented inclusion predicate / a tolerance band on the ID set, not an exact magic count; specify NaN-row inclusion in the instruction."
+  }
+]

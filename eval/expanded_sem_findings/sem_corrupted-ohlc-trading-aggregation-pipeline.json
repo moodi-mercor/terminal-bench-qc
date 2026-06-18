@@ -1,0 +1,11 @@
+[
+  {
+    "task": "corrupted-ohlc-trading-aggregation-pipeline",
+    "area": "tests",
+    "severity": "FAIL",
+    "title": "brittle-overconstrained-verifier",
+    "location": "tests/test_outputs.py:49,60,71,83,94",
+    "detail": "Checks 4-8 assert exact internal config representations (ENABLE_ALT_VENUES=true, USE_SESSION_CALENDAR=true, SCHEMA_VERSION=\"v2\", DARKPOOL mapping location) the instruction never specifies; instruction only requires ohlc_daily to match clearinghouse volumes. Correct solutions using other encodings fail.",
+    "fix": "Assert the observable outcome (ohlc_daily data) only; drop assertions on unstated internal config flag names/values/locations."
+  }
+]
