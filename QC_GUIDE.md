@@ -36,6 +36,20 @@ expert_time > 0`; time estimates within the difficulty's range (watch the
 seconds-mistaken-for-minutes smell: values ~60× too high); `agent_timeout ≥
 verifier_timeout`; resources within client caps (~1 CPU / 4 GB).
 
+**Reward-hack screen** (`check_reward_hack.py`): the statically-decidable half of
+reward-hacking — tests that pass without the work, and gameable pass signals:
+- **Vacuous tests** — a test body that's trivial (`pass`/`return`/`assert True`),
+  an assertion swallowed by `except: pass`, an existence-only check, or a test
+  with no assertion at all.
+- **Swallowed verifier** — `tests/test.sh` runs `pytest ... || true` (failure
+  ignored). Benign `|| true` on dep installs / pre-runs is not flagged.
+- **Unconditional reward** — `test.sh` writes a passing reward not gated on the
+  verifier's exit code (FAIL).
+- **Agent-writable pass signal** — the verifier reads a reward/score/status file
+  the agent could write.
+These are candidates; a no-op run confirms them. (Subtle gameable logic that only
+fires at runtime is *not* statically decidable — that's the delivery-stage gate.)
+
 **Leakage / anti-cheat** (`check_leakage.py`): the agent's container is built
 **only** from `environment/Dockerfile`; `tests/` and `solution/` are mounted at
 verify time and must never be COPY'd in. Flag:
@@ -110,9 +124,10 @@ Run this as one sub-agent per task, *in addition* to the static + semantic
 passes. These five checks are fully decidable by analysis (reading the task) — no
 task run required.
 
-> Reward-hacking and environment-fairness require *executing* a cheat to confirm,
-> so they live in the delivery-stage behavioral gate, not in this routine. Static
-> leak detection (Part 1) still flags baked-answer leaks here.
+> The statically-decidable parts of reward-hacking (vacuous tests, gameable pass
+> signals, baked-answer leaks) are caught in **Part 1** (`check_reward_hack.py`,
+> `check_leakage.py`). What remains for the delivery-stage run is *confirming* an
+> exploit actually fires and probing environment fairness — those need execution.
 
 1. **Instruction ↔ verifier alignment** — everything in the prompt is tested, and
    everything tested is in the prompt (or discoverable in the agent-visible env).
@@ -168,5 +183,7 @@ Use these exact titles so the histogram groups cleanly:
 `untested-requirement`, `phantom-test`, `brittle-string-match`, `weak-assertion`,
 `flaky-test`, `over-specified-instruction`, `hardcoded-solution`,
 `golden-patch-mismatch`, `task-realism`, `instruction-clarity`, `spelling-grammar`,
-`semantic-cheat-vector`, `public-benchmark-contamination`, `near-duplicate-in-set`.
+`semantic-cheat-vector`, `public-benchmark-contamination`, `near-duplicate-in-set`,
+`vacuous-test`, `swallowed-assertion`, `existence-only-check`, `no-assertion-test`,
+`test-sh-swallows-failure`, `unconditional-reward`, `agent-writable-reward-signal`.
 Append `*-ok` (e.g. `tests-ok`) for clean PASS findings.
