@@ -90,9 +90,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("tasks")
     here = os.path.dirname(os.path.abspath(__file__))
-    ap.add_argument("--corpus",
-                    default=os.path.join(here, "..", "references", "golden",
-                                         "decontam_corpus.jsonl"))
+    # prefer the committed data/ copy; fall back to the local references/ copy
+    default_corpus = os.path.join(here, "..", "data", "decontam_corpus.jsonl")
+    if not os.path.isfile(default_corpus):
+        default_corpus = os.path.join(here, "..", "references", "golden",
+                                      "decontam_corpus.jsonl")
+    ap.add_argument("--corpus", default=default_corpus)
     ap.add_argument("--contam-threshold", type=float, default=0.5)
     ap.add_argument("--dup-threshold", type=float, default=0.6)
     ap.add_argument("--out", default="findings_dataset.json")

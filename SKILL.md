@@ -129,9 +129,9 @@ python scripts/decontaminate.py tasks_cache --out qc_out/findings_dataset.json
 
 > **Public TB format note:** the public corpus is Terminal-Bench v1 (`task.yaml`,
 > root `Dockerfile`, `run-tests.sh`, `solution.sh`) — a different layout from the
-> TB2/harbor OTS tasks the detectors parse. Public tasks under
-> `references/golden/public-tb-core/` are **design references + the decontam
-> corpus**, not inputs to the static detectors.
+> TB2/harbor OTS tasks the detectors parse. The committed corpus lives at
+> `data/decontam_corpus.jsonl`; it is a decontamination reference, not an input to
+> the static detectors.
 
 ## Precision / recall loop (action item 2)
 
@@ -144,14 +144,13 @@ python scripts/decontaminate.py tasks_cache --out qc_out/findings_dataset.json
 
 ## References
 
-- `references/qc-checklist.md` — the 7-dimension review contract (metadata,
-  dockerfile, instructions, tests, solution, anti-cheat, brittleness) + verdict
-  roll-up this skill implements.
-- `references/qc-gate-reference.md` — the standing pre-delivery gate, per-client
-  rationale (start here for the "why").
-- `references/client-feedback.md` — consolidated NVIDIA/MAI/GDM/Reflection feedback.
-- `references/terminal-bench-review-SKILL.md` + `-CHECKLIST.md` — the deep
-  semantic rubric, FP rules, deep-trace patterns (Layer 2 authority).
-- `references/semantic-review-prompt.md` — Layer 2 sub-agent dispatch.
-- `references/studio-data-access.md` — RL Studio API for pulling OTS tasks.
-- `references/golden/` — public TB/TB2 tasks: golden examples + decontam corpus.
+- **`QC_GUIDE.md`** — the self-contained QC rubric: what every check looks for,
+  the semantic-review criteria + FP rules, verdict scale, and stable defect-class
+  titles. This is all the skill needs to run.
+- **`data/decontam_corpus.jsonl`** — the public Terminal-Bench corpus (244 tasks)
+  used by `decontaminate.py`.
+
+> The fuller internal references (client-specific feedback, the standing
+> delivery-gate doc, the deep terminal-bench-review rubric, golden example tasks)
+> live in a local-only `references/` folder that is intentionally **not** in this
+> repo. `QC_GUIDE.md` distills the non-sensitive operating criteria from them.
