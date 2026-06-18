@@ -1,0 +1,8 @@
+task,is_defect,notes
+# Manual ground-truth labels for the precision/recall loop (score_qc.py).
+# is_defect: 1/yes/true if the task has a real defect, else 0/no.
+# Fill one row per task you manually reviewed. Example from the 15-task validation:
+dra-calibration-integrity-pipeline,1,truth (/opt/valid_initial_count.txt) baked into agent-visible path and read by verifier; not in instruction
+satellite-audit-packager,0,raw_data/* are instruction-referenced inputs not leaked truth (QC correctly downgraded to WARN)
+seismic-telemetry-audit-20260506T011035Z-0b551c45,0,clean
+cloud-cost-anomaly-auditor,0,clean
