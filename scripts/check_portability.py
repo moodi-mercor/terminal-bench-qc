@@ -123,6 +123,26 @@ def _check_solve(root, name):
                                    "with PID filtering that excludes the launcher."))
             break
 
+    # config edited but daemon never restarted/started afterward (~40 tasks, 1st-5k)
+    CFG = re.compile(r"(redis\.conf|postgresql\.conf|pg_hba\.conf|my\.cnf|mysqld?\.cnf|"
+                     r"nginx\.conf|httpd\.conf|mosquitto\.conf|supervisord?\.conf|"
+                     r"/etc/[\w./-]+\.conf)")
+    EDIT = re.compile(r"(\bsed\s+-i|>>\s*\S|\btee\b|\bcrudini\b|\baugtool\b)")
+    RESTART = re.compile(r"(systemctl\s+(restart|reload)|service\s+\S+\s+(restart|reload|start)|"
+                         r"/etc/init\.d/\S+\s+(restart|reload|start)|kill\s+-HUP|-s\s+reload|"
+                         r"\bnginx\s+-s\s+reload|pg_ctl\b|CONFIG\s+SET|--daemonize|"
+                         r"\bredis-server\b|\bmysqld|\bmongod\b|supervisorctl\s+(restart|reload|update))",
+                         re.I)
+    edit_line = next((i for i, l in enumerate(lines) if EDIT.search(l) and CFG.search(l)), None)
+    if edit_line is not None and not RESTART.search("\n".join(lines[edit_line:])):
+        out.append(finding(name, "solution", WARN, "config-edit-no-restart",
+                           detail=f"line {edit_line+1} edits a service config but solve.sh never "
+                                  "restarts/reloads the daemon afterward — the running daemon keeps "
+                                  "the old config and the test sees stale state.",
+                           location=f"solution/solve.sh:{edit_line+1}",
+                           fix="Restart or reload the daemon after the edit (e.g. `service <svc> "
+                               "restart` / `kill -HUP` / re-launch), or edit before first start."))
+
     # server defined but never started
     sol = _solution_text(root)
     if SERVER_MARK.search(sol) and not LAUNCH_MARK.search(text):

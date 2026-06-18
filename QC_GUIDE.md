@@ -251,5 +251,6 @@ Use these exact titles so the histogram groups cleanly:
 `runtime-network`, `reference-solve-reads-truth`, `memory-vs-workload`,
 `backgrounded-daemon-no-redirect`, `pip-no-break-system-packages`,
 `server-defined-not-started`, `redis-no-daemonize`, `mixed-bash-python-solve`,
-`broad-pkill`, `systemd-assumption`, `cmd-entrypoint-reliance`. Append `*-ok`
+`broad-pkill`, `config-edit-no-restart`, `systemd-assumption`,
+`cmd-entrypoint-reliance`. Append `*-ok`
 (e.g. `tests-ok`) for clean PASS findings.
