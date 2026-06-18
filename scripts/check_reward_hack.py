@@ -115,12 +115,51 @@ def _analyze_py(path, name, rel):
         tree = ast.parse(src)
     except SyntaxError:
         return out
+    # verifier imports the reference solution — it can assert against the oracle's
+    # own output instead of the agent's, or just leak the answer into the test.
+    for n in ast.walk(tree):
+        mod = ""
+        if isinstance(n, ast.ImportFrom):
+            mod = (n.module or "").split(".")[0]
+        elif isinstance(n, ast.Import):
+            mod = next((a.name.split(".")[0] for a in n.names
+                        if a.name.split(".")[0] in ("solution", "solve")), "")
+        if mod in ("solution", "solve"):
+            out.append(finding(name, "anti_cheat", FAIL, "test-imports-solution",
+                               detail=f"{rel} imports `{mod}` — the verifier pulls in the "
+                                      "reference solution; it can grade against the oracle's "
+                                      "own output rather than the agent's work.",
+                               location=f"{rel}:{n.lineno}",
+                               fix="Remove the import; the verifier must check the agent's "
+                                   "output independently of solution/."))
+            break
     for node in ast.walk(tree):
         if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
         if not node.name.startswith("test"):
             continue
         loc = f"{rel}:{node.lineno}"
+        # decorators: a scored test that is skipped/xfail'd, or parametrized over
+        # an empty list, never actually runs.
+        for d in node.decorator_list:
+            dn = d.func if isinstance(d, ast.Call) else d
+            attr = getattr(dn, "attr", getattr(dn, "id", "")) or ""
+            if attr in ("skip", "skipif", "xfail"):
+                out.append(finding(name, "anti_cheat", WARN, "skipped-scored-test",
+                                   detail=f"`{node.name}` is decorated `{attr}` — a scored "
+                                          "test that may never run (silently un-verifies a "
+                                          "requirement).",
+                                   location=loc,
+                                   fix="Remove the skip/xfail, or confirm the requirement is "
+                                       "covered by another test."))
+            if (attr == "parametrize" and isinstance(d, ast.Call) and len(d.args) >= 2
+                    and isinstance(d.args[1], (ast.List, ast.Tuple))
+                    and len(d.args[1].elts) == 0):
+                out.append(finding(name, "anti_cheat", WARN, "empty-parametrize",
+                                   detail=f"`{node.name}` is parametrized over an EMPTY list "
+                                          "— pytest collects zero cases, so it always passes.",
+                                   location=loc,
+                                   fix="Populate the parametrize cases, or remove the test."))
         # trivial body
         if _is_trivial_body(node.body):
             out.append(finding(name, "anti_cheat", WARN, "vacuous-test",

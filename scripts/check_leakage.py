@@ -81,6 +81,15 @@ def _build_parts(root):
     for n in BUILD_SCRIPTS:
         for h in glob.glob(os.path.join(env, "**", n), recursive=True):
             parts[os.path.relpath(h, root)] = read_text(h)
+    # Also scan setup/generator scripts that don't match the fixed names above —
+    # real OTS tasks use bespoke names (e.g. `__swegen_setup_commands.sh`,
+    # `generate_mutated.py`) that still bake truth at build time. Match by shape.
+    for pat in ("*setup*.sh", "*swegen*", "prestart*.sh", "bootstrap*.sh",
+                "generate*.py", "gen_*.py", "*mutate*.py", "make_*.py", "seed*.py"):
+        for h in glob.glob(os.path.join(env, "**", pat), recursive=True):
+            rel = os.path.relpath(h, root)
+            if rel not in parts and os.path.isfile(h):
+                parts[rel] = read_text(h)
     return parts
 
 
@@ -102,6 +111,40 @@ def _all_instruction_referenced(paths, root):
             continue
         return False
     return True
+
+
+# A write is a redirect target (`> p` / `>> p` / `tee p`) or open(p, 'w'/'a'/'x').
+# Anything else that names the path is treated as a read. Used to tell a reference
+# that PRODUCES the deliverable (writes the answer path) from one that CHEATS
+# (reads a baked truth file it never produced).
+_REDIR_TAIL = re.compile(r"""(?:>>?|tee(?:\s+-a)?\s+)\s*['"]?\s*$""")
+
+
+def _solve_produces(text, path):
+    """True if the reference WRITES `path` (produces the deliverable) — directly
+    (`... > path`, `open(path,'w')`) or through a variable bound to it
+    (`OUT = "path"` ... `open(OUT,'w')` / `... > $OUT`). A reference that produces
+    the answer file is emitting output, not reading baked truth — so it is not a
+    leak, even though the verifier reads the same path.
+    """
+    base = os.path.basename(path)
+    for tok in (path, base):
+        for m in re.finditer(re.escape(tok), text):
+            tail = text[max(0, m.start() - 48):m.start()]
+            after = text[m.end():m.end() + 24]
+            if _REDIR_TAIL.search(tail):
+                return True
+            if (re.search(r"open\(\s*['\"][^'\"]*$", tail)
+                    and re.search(r"^['\"]?\s*,\s*['\"][wax]", after)):
+                return True
+    # variable indirection: VAR bound to the path, then VAR written
+    for vm in re.finditer(r"(\w+)\s*=\s*['\"]%s['\"]" % re.escape(path), text):
+        var = vm.group(1)
+        if re.search(r"open\(\s*%s\s*,\s*['\"][wax]" % re.escape(var), text):
+            return True
+        if re.search(r"(?:>>?|tee(?:\s+-a)?\s+)\s*[\"']?\$?\{?%s\b" % re.escape(var), text):
+            return True
+    return False
 
 
 def _verifier_text(root):
@@ -226,8 +269,9 @@ def _truth_bake(root, name):
     # (e.g. /opt/valid_initial_count.txt) while dropping input/source false-positives.
     SRC_EXT = (".py", ".go", ".c", ".cc", ".cpp", ".h", ".hpp", ".js", ".ts",
                ".java", ".rs", ".rb", ".sh", ".pl", ".php", ".scala", ".kt")
-    INPUT_DIR = re.compile(r"/(incoming|inputs?|raw|fixtures?|samples?|corpus|"
-                           r"evidence|data/in|uploads?|feed)s?/", re.I)
+    INPUT_DIR = re.compile(r"/(incoming|in[-_]?folder|in[-_]?box|inputs?|raw|"
+                           r"fixtures?|samples?|corpus|evidence|data/in|uploads?|"
+                           r"feed)s?/", re.I)
 
     def is_truth_candidate(p):
         if TRUTHY.search(os.path.basename(p)):
@@ -285,17 +329,75 @@ def _reference_solve_reads_truth(root, name):
     for h in glob.glob(os.path.join(root, "solution", "**", "*"), recursive=True):
         if os.path.isfile(h):
             sol += "\n" + read_text(h)
-    hits = sorted(p for p in truth_paths
-                  if p in sol or os.path.basename(p) in sol)
-    if hits:
+    # Only a real leak if the reference REFERENCES the truth path but never
+    # PRODUCES it. Writing the (truthy-named) path — e.g. `... > /app/answer.txt`
+    # for a task whose instruction says "write the answer to /app/answer.txt", or
+    # via an output-path variable — is the reference emitting the deliverable, not
+    # reading the answer. (Killed a whole class of false positives on real TB tasks
+    # that write an answer.txt / secret.txt output file.)
+    hits = sorted({p for p in truth_paths
+                   if (p in sol or os.path.basename(p) in sol)
+                   and not _solve_produces(sol, p)})
+    if not hits:
+        return []
+    # FP rule (mirror of _truth_bake): a path the instruction references is task
+    # INPUT the reference legitimately reads (e.g. a "reference DB" dir), not the
+    # hidden answer — downgrade to WARN rather than FAIL.
+    real = [h for h in hits if not _all_instruction_referenced([h], root)]
+    if real:
         return [finding(name, "anti_cheat", FAIL, "reference-solve-reads-truth",
-                        detail=f"solution/solve.sh references {hits}, the same truth path the "
+                        detail=f"solution/solve.sh references {real}, the same truth path the "
                                "verifier compares against — the reference solves by reading the "
                                "answer, not by doing the task.",
                         location="solution/solve.sh",
                         fix="Make the reference solve the task for real; move the truth file to "
                             "tests/.truth/ (verify-time only) so neither agent nor solve can read it.")]
-    return []
+    return [finding(name, "anti_cheat", WARN, "reference-reads-instruction-input",
+                    detail=f"solution/solve.sh reads {hits}, but they are referenced in "
+                           "instruction.md — likely legitimate task input, not the answer.",
+                    location="solution/solve.sh",
+                    fix="Confirm the path is input the reference is meant to read (not the "
+                        "expected answer). If it encodes truth, move it to tests/.truth/.")]
+
+
+# high-confidence live-credential signatures (low false-positive; example data
+# rarely contains a real private key or cloud token).
+SECRET_SIGS = [
+    ("private-key", re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----")),
+    ("aws-access-key", re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b")),
+    ("github-token", re.compile(r"\b(?:ghp|gho|ghu|ghs|ghr|github_pat)_[A-Za-z0-9_]{20,}")),
+    ("slack-token", re.compile(r"\bxox[baprs]-[0-9A-Za-z-]{10,}")),
+    ("gcp-key", re.compile(r'"private_key_id"\s*:\s*"[0-9a-f]{20,}"')),
+]
+
+
+def _baked_secrets(root, name):
+    """Live credentials baked into agent-visible files (NVIDIA: 'no personal data';
+    anti-cheat: no leaked secrets). High-confidence signatures only — WARN for
+    manual confirmation, since a planted credential is occasionally the task."""
+    env = os.path.join(root, "environment")
+    hits = set()
+    for h in glob.glob(os.path.join(env, "**", "*"), recursive=True):
+        if not os.path.isfile(h):
+            continue
+        try:
+            if os.path.getsize(h) > 256 * 1024:
+                continue
+        except OSError:
+            continue
+        txt = read_text(h)
+        for label, rx in SECRET_SIGS:
+            if rx.search(txt):
+                hits.add((label, os.path.relpath(h, root)))
+    if not hits:
+        return []
+    shown = sorted(hits)[:6]
+    return [finding(name, "anti_cheat", WARN, "secret-baked-in-image",
+                    detail=f"agent-visible file(s) contain credential-shaped data {shown} — "
+                           "a leaked secret / personal data the agent shouldn't see.",
+                    location="environment/",
+                    fix="Remove the credential, or confirm it is intended task input (a "
+                        "deliberately-planted secret for a recovery task).")]
 
 
 def check_task(name, root):
@@ -304,6 +406,7 @@ def check_task(name, root):
     out += _tests_bake(root, name)
     out += _truth_bake(root, name)
     out += _reference_solve_reads_truth(root, name)
+    out += _baked_secrets(root, name)
     # keep both reported dimensions populated with a PASS sentinel when clean
     areas = {f["area"] for f in out}
     if "dockerfile" not in areas:

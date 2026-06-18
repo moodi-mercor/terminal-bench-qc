@@ -21,6 +21,9 @@ import check_leakage
 import check_reward_hack
 import check_env_fairness
 import check_portability
+import check_dockerfile
+import check_instructions
+import check_verifier_defenses
 import aggregate
 from common import discover_tasks, emit
 
@@ -45,6 +48,9 @@ def main():
         ("reward_hack", check_reward_hack, "findings_reward_hack.json"),
         ("env_fairness", check_env_fairness, "findings_env_fairness.json"),
         ("portability", check_portability, "findings_portability.json"),
+        ("dockerfile", check_dockerfile, "findings_dockerfile.json"),
+        ("instructions", check_instructions, "findings_instructions.json"),
+        ("verifier_defenses", check_verifier_defenses, "findings_verifier_defenses.json"),
     ]
     for label, mod, fname in gates:
         findings = []

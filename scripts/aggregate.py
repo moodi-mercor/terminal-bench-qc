@@ -59,13 +59,32 @@ def reconcile(findings):
     """
     refuted = {(f["task"], f["ref"]) for f in findings
                if f.get("title") == "verify-refuted" and f.get("ref")}
+    # A read-only SKEPTIC confirms/refutes each adversarial cheat-vector candidate
+    # (the precision filter for Part 3). Its verdicts decide the cheat-vector's fate.
+    cv_confirmed = {f["task"] for f in findings if f.get("title") == "cheat-vector-confirmed"}
+    cv_refuted = {f["task"] for f in findings if f.get("title") == "cheat-vector-refuted"}
+    # MECHANICAL gate: a verifier with a detected anti-cheat defense (mutated rerun /
+    # recompute / source-grep / re-exec) provably resists the hardcode/fake-artifact
+    # cheats, so cheat-vector candidates against it are suppressed deterministically —
+    # no agent in the loop, so it can't cry wolf (check_verifier_defenses.py).
+    defended = {f["task"] for f in findings if f.get("title") == "verifier-defended"}
+    META = ("verify-refuted", "verify-confirm", "cheat-vector-confirmed", "cheat-vector-refuted")
     out, dropped = [], 0
     for f in findings:
-        if f.get("title") in ("verify-refuted", "verify-confirm"):
+        if f.get("title") in META:
             continue
         if (f["task"], f.get("title")) in refuted:
             dropped += 1
             continue
+        # An ANALYTICAL adversarial cheat-vector is a CANDIDATE, not a verdict:
+        # raw, it over-flagged (precision 0.22 as FAIL) — reading alone can't tell a
+        # real exploit from a theoretical one. Its fate is decided by the skeptic:
+        #   confirmed -> FAIL ; refuted -> dropped ; unreviewed -> WARN candidate.
+        if f.get("title") == "semantic-cheat-vector":
+            if f["task"] in cv_refuted or f["task"] in defended:
+                dropped += 1  # refuted by skeptic, or the verifier has a real defense
+                continue
+            f = {**f, "severity": FAIL if f["task"] in cv_confirmed else WARN}
         out.append(f)
     return out, dropped
 

@@ -11,14 +11,17 @@ GDM cross-delivery overlap):
   2. Near-duplicate / template reuse — OTS tasks are compared to each OTHER; high
      pairwise similarity ⇒ low diversity from template reuse.
 
-This is a stdlib lexical baseline (TF-IDF cosine over word tokens). It is
-deterministic and needs no model. For the embedding-based methodology the clients
-ask for, swap the vectorizer for sentence embeddings and keep the same cosine
-thresholds — the report format is identical.
+Two similarity backends, same thresholds and same report:
+  - `--method tfidf` (default): stdlib TF-IDF cosine over word tokens. Deterministic,
+    no model, no install.
+  - `--method embed`: sentence-embedding cosine — the embedding methodology NVIDIA /
+    Reflection ask for. Needs `pip install sentence-transformers numpy`; pick the
+    model with `--model` (default all-MiniLM-L6-v2).
 
 Usage:
     python decontaminate.py <tasks-dir> \
-        [--corpus references/golden/decontam_corpus.jsonl] \
+        [--corpus data/decontam_corpus.jsonl] \
+        [--method tfidf|embed] [--model all-MiniLM-L6-v2] \
         [--contam-threshold 0.5] [--dup-threshold 0.6] \
         [--out findings_dataset.json]
 
@@ -98,41 +101,82 @@ def main():
     ap.add_argument("--corpus", default=default_corpus)
     ap.add_argument("--contam-threshold", type=float, default=0.5)
     ap.add_argument("--dup-threshold", type=float, default=0.6)
+    ap.add_argument("--method", choices=["tfidf", "embed"], default="tfidf",
+                    help="tfidf (stdlib default) or embed (sentence-transformers cosine)")
+    ap.add_argument("--model", default="all-MiniLM-L6-v2",
+                    help="sentence-transformers model id for --method embed")
     ap.add_argument("--out", default="findings_dataset.json")
     args = ap.parse_args()
 
     tasks = discover_tasks(args.tasks)
-    q_names, q_toks = [], []
+    q_names, q_toks, q_text = [], [], []
     for name, root in tasks:
         instr = read_text(task_paths(root)["instruction.md"])
         q_names.append(name)
         q_toks.append(tokens(instr))
+        q_text.append(instr)
 
     corpus = load_corpus(args.corpus)
     c_names = [r.get("name", f"corpus_{i}") for i, r in enumerate(corpus)]
+    c_src = [r.get("source", "public") for r in corpus]
     c_toks = [tokens(r.get("instruction", "")) for r in corpus]
+    c_text = [r.get("instruction", "") for r in corpus]
 
-    idf = build_idf(q_toks + c_toks)
-    q_vecs = [vec(t, idf) for t in q_toks]
-    c_vecs = [vec(t, idf) for t in c_toks]
+    # similarity backend: TF-IDF cosine (stdlib default) or sentence-embedding
+    # cosine (the methodology NVIDIA/Reflection ask for; needs sentence-transformers).
+    if args.method == "embed":
+        try:
+            import numpy as np
+            from sentence_transformers import SentenceTransformer
+        except ImportError:
+            import sys
+            sys.exit("--method embed needs: pip install sentence-transformers numpy")
+        model = SentenceTransformer(args.model)
+        qE = np.asarray(model.encode(q_text, normalize_embeddings=True,
+                                     show_progress_bar=False))
+        cE = (np.asarray(model.encode(c_text, normalize_embeddings=True,
+                                      show_progress_bar=False))
+              if corpus else np.zeros((0, qE.shape[1] if len(qE) else 1)))
 
-    findings = []
+        def contam(i):
+            if len(cE) == 0:
+                return 0.0, -1
+            s = cE @ qE[i]
+            j = int(s.argmax())
+            return float(s[j]), j
 
-    # 1. contamination vs public corpus
-    if c_vecs:
-        for i, name in enumerate(q_names):
+        def dup(i, k):
+            return float(qE[i] @ qE[k])
+        print(f"[decontaminate] embedding backend: {args.model}")
+    else:
+        idf = build_idf(q_toks + c_toks)
+        q_vecs = [vec(t, idf) for t in q_toks]
+        c_vecs = [vec(t, idf) for t in c_toks]
+
+        def contam(i):
             best, best_j = 0.0, -1
             for j, cv in enumerate(c_vecs):
                 s = cosine(q_vecs[i], cv)
                 if s > best:
                     best, best_j = s, j
+            return best, best_j
+
+        def dup(i, k):
+            return cosine(q_vecs[i], q_vecs[k])
+
+    findings = []
+
+    # 1. contamination vs public corpus
+    if corpus:
+        for i, name in enumerate(q_names):
+            best, best_j = contam(i)
             if best >= args.contam_threshold:
                 sev = FAIL if best >= args.contam_threshold + 0.2 else WARN
                 findings.append(finding(
                     name, "dataset", sev, "public-benchmark-contamination",
-                    detail=f"Instruction is {best:.2f} cosine-similar to public TB "
-                           f"task '{c_names[best_j]}'. Possible contamination / "
-                           "trivially searchable if internet is allowed.",
+                    detail=f"Instruction is {best:.2f} cosine-similar to "
+                           f"{c_src[best_j]} task '{c_names[best_j]}'. Possible "
+                           "contamination / trivially searchable if internet is allowed.",
                     location="instruction.md",
                     fix="Confirm the task is not a public benchmark task; replace or "
                         "differentiate. Re-check with embedding similarity."))
@@ -148,7 +192,7 @@ def main():
     n = len(q_names)
     for i in range(n):
         for k in range(i + 1, n):
-            s = cosine(q_vecs[i], q_vecs[k])
+            s = dup(i, k)
             if s >= args.dup_threshold:
                 findings.append(finding(
                     q_names[i], "dataset", WARN, "near-duplicate-in-set",
