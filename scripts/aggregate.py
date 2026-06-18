@@ -21,12 +21,13 @@ from collections import Counter, defaultdict
 
 from common import PASS, WARN, FAIL, SEV_RANK, AREAS, worst
 
-# columns shown in the CSV, grouped by the three QC parts:
+# columns shown in the CSV, grouped by QC part:
 #   static (deterministic): structure, metadata, dockerfile, anti_cheat, dataset
 #   semantic (sub-agent):   instructions, tests, solution
-#   behavioral (runtime):   behavioral
+# (behavioral oracle/no-op is a separate delivery-stage gate, not run by this
+#  skill; if external behavioral findings are dropped in, add "behavioral" here.)
 COLS = ["structure", "metadata", "dockerfile", "anti_cheat", "dataset",
-        "instructions", "tests", "solution", "behavioral"]
+        "instructions", "tests", "solution"]
 
 
 def load_findings(d):

@@ -5,8 +5,9 @@ This is the one-command entry point for Layers 0-1. It runs the structure,
 metadata, and leakage detectors, writes their findings JSON into an output
 directory, then produces the SSOT + defect-distribution reports.
 
-Behavioral gates (oracle/no-op/adversarial, Layer 2) and semantic review
-(Layer 3) are run separately — see scripts/behavioral_gates.sh and the SKILL.
+Semantic review (Layer 2) is run separately by dispatching sub-agents — see
+references/semantic-review-prompt.md and the SKILL. (Behavioral oracle/no-op is
+a delivery-stage gate, out of scope for this skill.)
 
 Usage:
     python run_static_qc.py <tasks-dir> [--out-dir qc_out]
