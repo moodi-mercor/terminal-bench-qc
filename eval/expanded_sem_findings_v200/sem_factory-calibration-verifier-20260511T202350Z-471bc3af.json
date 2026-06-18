@@ -1,0 +1,11 @@
+[
+  {
+    "task": "factory-calibration-verifier-20260511T202350Z-471bc3af",
+    "area": "tests",
+    "severity": "FAIL",
+    "title": "Difficulty 'hard' but time estimates are far below the hard range (internally inconsistent metadata)",
+    "location": "task.toml:[metadata] difficulty='hard', expert_time_estimate_min=40, junior_time_estimate_min=120",
+    "detail": "Per the review checklist's time-difficulty alignment (hard: expert 300-480 min, junior 600-19200 min), expert=40 and junior=120 fall far outside the hard band \u2014 and squarely inside the medium band (expert 5-180, junior 10-480). The label and the estimates contradict each other. The checklist states: 'Flag as FAIL if time estimates fall outside the range for the declared difficulty.' Functionally the task is sound (oracle verified to produce the exact expected outputs for all 8 tests, see below), so this is purely a metadata defect.",
+    "fix": "Set difficulty='medium' to match the 40/120 estimates, or raise the estimates into the hard range if 'hard' is correct."
+  }
+]

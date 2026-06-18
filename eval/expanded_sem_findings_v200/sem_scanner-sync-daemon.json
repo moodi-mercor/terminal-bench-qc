@@ -1,0 +1,11 @@
+[
+  {
+    "task": "scanner-sync-daemon",
+    "area": "tests",
+    "severity": "FAIL",
+    "title": "Equal-priority merge tie-break is undiscoverable: not in instruction and not exercised by the only agent-visible fixture, yet decides ~35% of v1/v2/v3 output values",
+    "location": "tests/test_outputs.py:test_check_3/6/7/8 (assert actual==expected) vs tests/.truth/generate_truth.py compile_ref: `vp.sort(key=lambda x:(x[1],x[0]))` then `mg[k]=v` (equal priority -> lexicographically-largest filename wins)",
+    "detail": "When two valid providers share the winning priority for a flag key, the reference resolves the collision by lexicographically-largest filename (last write wins after sort on (priority, filename)). instruction.md only says provider_priorities 'maps filename glob patterns to integer weights ... Determine how this affects merging when multiple providers define the same flag key' \u2014 it explains priority ordering but states NO rule for EQUAL priority. The single agent-visible fixture (/workspace/fixtures/sample) has providers 01_base(pri10), 02_override(pri20), 03_lowpri(pri5) plus an HMAC-INVALID 05_core_rogue \u2014 every VALID provider has a distinct priority, so a same-priority collision is never demonstrated. But the test bundles do collide heavily at equal priority: in tests/.truth/v3_bundle, 253 of 724 flag keys (35%) are decided by this tie-break (I computed this directly), and v1/v2 'base_*' (150/130 files all at priority 10) behave the same. Because tests assert exact dict equality including 'val', any reasonable implementation that breaks equal-priority ties differently (os.listdir/glob order, first-wins, by version, or smallest-filename) mismatches and fails test_check_3/6/7/8. The oracle only passes because solve.sh hardcodes the identical `sort(key=lambda x:(x[1],x[0]))`. This is an instruction<->test misalignment / undiscoverable required rule.",
+    "fix": "State the equal-priority tie-break explicitly in instruction.md (e.g. 'on equal priority, the lexicographically greater filename wins'), OR add a same-priority collision (two valid providers at the same weight defining the same key with different values) to /workspace/fixtures/sample so the rule is demonstrably reverse-engineerable, OR give every test bundle a strict total order of priorities so no tie ever decides output."
+  }
+]

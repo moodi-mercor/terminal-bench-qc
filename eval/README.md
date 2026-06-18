@@ -53,16 +53,18 @@ python scripts/score_qc.py qc_out/review-ssot.csv eval/golden_labels.csv
 `score_qc.py` only scores tasks present in both the QC output and the labels, so it
 ignores tasks you didn't pull.
 
-## Expanded 100-task eval (first/second 5k + OTS + clean controls)
+## Expanded 200-task eval (first/second 5k + OTS + cold-discovery + clean controls)
 
-`expanded_labels.csv` is the next recall/precision target from the action item
-"grab ~50 tasks and iterate until recall is 100%," now broadened to 100 rows with
-more OTS Terminal-Bench coverage. It mixes:
+`expanded_labels.csv` is the recall/precision target from the action item
+"grab ~50 tasks and iterate until recall is 100%," now broadened to **200 rows**
+(30 defects, 170 clean controls). It mixes:
 
 - synthetic fixtures for deterministic regression coverage;
 - current manually audited OTS examples from `run50_labels.csv`;
 - extra OTS Terminal-Bench samples pulled directly from Studio, including both
   confirmed defects and remediated/known-pass controls;
+- **60 cold-discovery OTS tasks** sampled blind from Studio and audited fresh (see
+  the cold-discovery section below);
 - public Terminal-Bench clean controls for precision;
 - high-confidence defect IDs from the first/second 5k validation markdowns
   (`server-defined-not-started`, `cmd-entrypoint-reliance`,
@@ -93,21 +95,62 @@ undecidable by file shape, so they are caught by the **Layer-2 semantic reviewer
 the confirmed findings are committed as `eval/expanded_sem_findings/sem_*.json` and
 folded into the score by `run_expanded_eval.sh`.
 
-The 100-row expansion keeps those 7 findings and adds 5 more confirmed semantic/manual
-findings from fresh OTS samples (`lab-flake-forensics`, `hpc-signature-router`,
-`stale-rego-trace-minimizer`, `algebraic-kiosk-processor`, and
-`stale-wasm-cache-purge`). The label set now contains 24 defects and 76 clean controls:
-9 fixtures, 68 OTS rows, 10 public TB controls, and 13 first/second-5k report rows.
+The 100→200 expansion keeps the prior 24 defects and grows **both ends** from their
+real-world sources (per the data strategy: defects ⇐ client/audit flags, clean ⇐ real
+TB), via a **blind cold-discovery pass** that answers the previous caveat below.
 
-**Latest target (static + semantic, corrected labels): `TP=24 FP=0 FN=0 TN=76` →
-precision = recall = 1.0.** Static catches the shape defects (0 FPs); the reviewer
-catches the 12 semantic/manual ones. Note this reviewer run is still partly
-*confirmatory* (the new rows were promoted only after reading the current task tree) —
-a blind cold-discovery run is the next rigor step.
+### Cold-discovery expansion (2026-06-18) — the blind rigor step
+
+The local defect pool was exhausted (all report candidates already promoted-or-rejected),
+so 200 was reached by genuinely *discovering* new defects rather than re-confirming known
+ones:
+
+- **60 fresh Studio tasks** were sampled by hashing task names across the 13,430-task world
+  (deterministic, none previously seen — see `expanded_v200_ots_tasks.txt`), pulled to
+  `tasks_cache_v200`, and reviewed **blind**: static QC ran first, then one Layer-2 reviewer
+  per task hunted semantic defects *without being told which tasks were defective*.
+- The pass confirmed **6 new defects** (~10% yield) — committed as
+  `eval/expanded_sem_findings_v200/sem_*.json`:
+  `coldchain-shadow-generator` (verifier never runs the agent's script — a correct agent
+  scores 0), `slo-budget-packet-reconciler` (answer key baked into the agent image at
+  `/tests/.truth/`), `port-scheduler-slo-envelope-builder` (verifier helper baked agent-
+  writable into `/tests/`, also confirmed by static), `scanner-sync-daemon` (an
+  undiscoverable required tie-break rule decides ~35% of outputs vs exact-equality tests),
+  `contain-trojan-lateral` (brittle exact-substring `10.55.0.0/16 drop` false-rejects
+  idiomatic nftables), and `factory-calibration-verifier` (declared `hard` with time
+  estimates in the `medium` band).
+- **Precision under cold conditions held:** static raised **5 leakage FAILs** on the fresh
+  batch; the Layer-2 review **confirmed 1** (port-scheduler, a true positive) and **refuted
+  4** as input/verify-time-only data wrongly read as baked truth. The 4 refutations are
+  committed as `verify-refuted` metas (`expanded_sem_findings_v200/verify_refuted.json`)
+  that `aggregate.py` drops before scoring — so those 4 do **not** register as false
+  positives. This is the FP-verification layer doing exactly its job on unseen tasks.
+- The other 54 fresh tasks are audited-clean OTS controls, plus **40 more public TB clean
+  controls** top up precision.
+
+The label set now contains **30 defects and 170 clean controls**: 9 fixtures, 68 prior OTS
+rows, 60 cold-discovery OTS rows (6 defect / 54 clean), 50 public TB controls, and 13
+first/second-5k report rows.
+
+**Scored result (static + semantic, 200 rows): `TP=30 FP=0 FN=0 TN=170` →
+precision = recall = 1.0.** Static catches the shape defects; the Layer-2 reviewer catches
+the semantic ones *and* clears the static leakage false positives. Unlike the 100-row run,
+the 6 new defects come from a **blind** pass (reviewers were not told which tasks were
+defective), so this is no longer purely confirmatory. The realized defect ratio (15%)
+reflects the true ~10% cold-discovery yield — defects were **not** padded to hit a target.
+
+> ⚠️ **Read this `1.0/1.0` with the clean-label audit below.** Recall=1.0 only means
+> *no labeled defect was missed* — and for the semantic rows the label and the prediction
+> come from the same reviewer (confirmatory, not independent). The clean-label audit
+> (next section) adversarially re-checked 30 of the 170 "clean" controls and found **2
+> were actually defective**, both in the public-TB pool. Counting those, the honest recall
+> is **≤0.94 and probably lower** — see below. Precision is unaffected (no new false flags).
 
 ```bash
 # Pull the real OTS/report tasks when available in Studio.
 python scripts/studio_pull.py --names @eval/expanded_ots_tasks.txt --out tasks_cache_expanded
+# Pull the cold-discovery batch.
+python scripts/studio_pull.py --names @eval/expanded_v200_ots_tasks.txt --out tasks_cache_v200
 
 # Ensure the public TB precision controls exist.
 python scripts/import_tb_tasks.py
@@ -115,6 +158,54 @@ python scripts/import_tb_tasks.py
 # Score every present piece against the expanded labels.
 bash eval/run_expanded_eval.sh
 ```
+
+### Clean-label audit (2026-06-18) — the "clean" controls are not all clean
+
+A `precision = recall = 1.0` should be distrusted, so we stress-tested the *clean* side
+directly: **randomly sampled 30 of the 170 `is_defect=0` controls and adversarially
+audited each** — one sub-agent per task, instructed to *prove the task is broken* (not to
+confirm it clean), executing the solution + verifier end-to-end where feasible.
+
+**Result: 2 of the 30 "clean" controls were actually defective** — a **6.7%
+false-negative rate in the clean labels (95% Wilson CI 1.8%–21.3%)**, and **both were
+public-TerminalBench tasks that only ever saw Part 1 (static)**:
+
+- **`model-extraction-relu-logits` — weak verifier (false-accept).** The grader matches
+  rows by the ratio `stolen_row / original_row` being ~constant. An all-zeros submission
+  gives `0/x = 0` everywhere → "matches" all 30 rows, so a **no-op that never queries the
+  model scores 100%**. Verified directly (`tests/test_outputs.py:55-75`).
+- **`attention-mil` — broken oracle (false-reject).** The shipped `solution/solve.sh`
+  fails the task's *own* tests: it patches the assignment via an exact `str.replace` whose
+  pattern assumes a blank line of 8 spaces, but the file's blank line is empty → the edit
+  silently no-ops → 9/11 tests crash. A correct solution exists (fixing the blank line →
+  11/11), so the *delivered reference* is wrong. (Possible TB-v1→TB2 import artifact —
+  worth a single rebuild to confirm it's upstream.)
+
+These are the two opposite failure modes: **#1 lets a wrong answer pass; #2 makes a right
+answer fail.**
+
+**Why the pipeline missed them — a real blind spot, not noise:**
+the public-TB tasks were imported as a *precision baseline* and **assumed clean**, so they
+only ever ran the deterministic Part-1 static gates — **Parts 2–3 (semantic reviewer +
+adversary) were never run on them, and behavioral is off by default.** Part 1 reads file
+*shapes*; it cannot tell that a no-op passes a grader (Part 2/3 + behavioral territory) or
+that the oracle fails (behavioral only). The audit also showed the rot is *localized*:
+**public-TB audited 2/10 broken (~20%); non-public-TB clean (OTS / run50 / cold-discovery)
+audited 20/0 — those labels held.** Extrapolating ~20% over the 68 public-TB controls
+suggests **~10–14 of them are likely defective**.
+
+**Honest standing:** the artifacts are sound (defects verified, refutation logic verified),
+but the headline `1.0/1.0` rests on labels whose clean side has a measured error rate. The
+truthful recall, counting the 2 found defects the pipeline did not flag, is
+**30/32 = 0.938**, and likely lower once the rest of the public-TB pool is reviewed.
+
+**Action items this surfaced (not yet applied):**
+1. **Relabel the 2 confirmed defects `is_defect=1`** (recall becomes the honest 0.938).
+2. **Run Part 2 (semantic reviewer) over the remaining ~66 public-TB controls** before
+   scoring precision against them — a control only earns the `is_defect=0` label by
+   surviving the same review the defects got, not by reputation.
+3. **Wire the behavioral gate (oracle-must-pass / no-op-must-fail) into the eval** as the
+   ground-truth catch for the weak-verifier and broken-oracle classes that reading misses.
 
 ## Expanded combined run (precision + recall)
 

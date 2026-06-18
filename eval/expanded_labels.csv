@@ -99,3 +99,103 @@ sparse-matrix-oom,0,WARN,,ots,tbench-first5k-current,current task declares memor
 stalled-manifest-ingestion,0,WARN,,ots,tbench-first5k-current,current task declares memory_mb=8192; resource above-cap warning but not scored as defect
 shadow-calibration-promoter,0,WARN,,ots,tbench-first5k-current,Spark/JVM mixed-scope candidate; keep non-defect until current behavioral failure is confirmed
 eval-harness-drift-reconciliation,0,WARN,,ots,tbench-second5k-current,current snapshot regenerates truth at verify time under /var/data/.truth from tests/.truth; previous path mismatch appears remediated
+agri-chem-shadow-generator,0,PASS,,ots,studio-cold-discovery,"cold-discovery clean control (real OTS, audited PASS/WARN)"
+api-legacy-serialization,0,PASS,,ots,studio-cold-discovery,"cold-discovery clean control (real OTS, audited PASS/WARN)"
+autonomous-fleet-restart-evaluator,0,PASS,,ots,studio-cold-discovery,"cold-discovery clean control (real OTS, audited PASS/WARN)"
+batch-export-shadow,0,PASS,,ots,studio-cold-discovery,"cold-discovery clean control (real OTS, audited PASS/WARN)"
+batch-schema-coercion,0,PASS,,ots,studio-cold-discovery,"cold-discovery clean control (real OTS, audited PASS/WARN)"
+berth-event-reconciliation,0,PASS,,ots,studio-cold-discovery,"cold-discovery clean control (real OTS, audited PASS/WARN)"
+booth-attestation-sync,0,PASS,,ots,studio-cold-discovery,"cold-discovery clean control (real OTS, audited PASS/WARN)"
+booth-journal-compiler,0,PASS,,ots,studio-cold-discovery,"cold-discovery clean control (real OTS, audited PASS/WARN)"
+broadcast-ingest-pipeline-20260505T212246Z-64e068d6,0,PASS,,ots,studio-cold-discovery,"cold-discovery clean control (real OTS, audited PASS/WARN)"
+claims-pipeline-skew,0,PASS,,ots,studio-cold-discovery,"cold-discovery clean control (real OTS, audited PASS/WARN)"
+cold-chain-provenance-bridge,0,PASS,,ots,studio-cold-discovery,"cold-discovery clean control (real OTS, audited PASS/WARN)"
+coldchain-pipeline-canonicalization,0,PASS,,ots,studio-cold-discovery,"cold-discovery clean control (real OTS, audited PASS/WARN)"
+coldchain-shadow-generator-20260511T190617Z-5c554c4d,1,FAIL,verifier-ignores-agent-output,ots,studio-cold-discovery,"cold-discovery confirmed defect (Layer-2 reviewer, blind sample); Verifier never runs the agent's script; output dirs are oracle-only side effects (correct "
+compliance-attestation-ingest-pipeline,0,PASS,,ots,studio-cold-discovery,"cold-discovery clean control (real OTS, audited PASS/WARN)"
+compliance-evidence-aggregator,0,PASS,,ots,studio-cold-discovery,"cold-discovery clean control; static leakage flag REFUTED by Layer-2 review (input/verify-time-only, not baked answer)"
+contain-trojan-lateral,1,FAIL,brittle-exact-string-match,ots,studio-cold-discovery,"cold-discovery confirmed defect (Layer-2 reviewer, blind sample); Exact-substring '10.55.0.0/16 drop' false-rejects idiomatic correct nftables configs"
+drifting-terraform-backend,0,PASS,,ots,studio-cold-discovery,"cold-discovery clean control (real OTS, audited PASS/WARN)"
+egress-compiler,0,PASS,,ots,studio-cold-discovery,"cold-discovery clean control (real OTS, audited PASS/WARN)"
+evidence-packager-pipeline,0,PASS,,ots,studio-cold-discovery,"cold-discovery clean control (real OTS, audited PASS/WARN)"
+exhibit-auditor-pipeline,0,PASS,,ots,studio-cold-discovery,"cold-discovery clean control; static leakage flag REFUTED by Layer-2 review (input/verify-time-only, not baked answer)"
+exhibit-spool-ingestion-worker,0,PASS,,ots,studio-cold-discovery,"cold-discovery clean control (real OTS, audited PASS/WARN)"
+fabric-capacity-shadow-generator,0,PASS,,ots,studio-cold-discovery,"cold-discovery clean control (real OTS, audited PASS/WARN)"
+factory-calibration-verifier-20260511T202350Z-471bc3af,1,FAIL,metadata-difficulty-time-mismatch,ots,studio-cold-discovery,"cold-discovery confirmed defect (Layer-2 reviewer, blind sample); Difficulty 'hard' but time estimates are far below the hard range (internally inconsistent"
+factory-cert-auditor,0,PASS,,ots,studio-cold-discovery,"cold-discovery clean control (real OTS, audited PASS/WARN)"
+financial-nlp-pipeline-deadlock-and-build-cascade,0,PASS,,ots,studio-cold-discovery,"cold-discovery clean control (real OTS, audited PASS/WARN)"
+fleet-geo-routing,0,PASS,,ots,studio-cold-discovery,"cold-discovery clean control (real OTS, audited PASS/WARN)"
+ghost-transaction-forensics,0,PASS,,ots,studio-cold-discovery,"cold-discovery clean control (real OTS, audited PASS/WARN)"
+hpc-entitlement-ingest,0,PASS,,ots,studio-cold-discovery,"cold-discovery clean control (real OTS, audited PASS/WARN)"
+hpc-handoff-ingest-pipeline,0,PASS,,ots,studio-cold-discovery,"cold-discovery clean control (real OTS, audited PASS/WARN)"
+hpc-stream-checkpoint,0,PASS,,ots,studio-cold-discovery,"cold-discovery clean control (real OTS, audited PASS/WARN)"
+lab-instrument-firebreak,0,PASS,,ots,studio-cold-discovery,"cold-discovery clean control (real OTS, audited PASS/WARN)"
+lab-instrument-provenance,0,PASS,,ots,studio-cold-discovery,"cold-discovery clean control (real OTS, audited PASS/WARN)"
+ledger-concurrency-hashchain,0,PASS,,ots,studio-cold-discovery,"cold-discovery clean control (real OTS, audited PASS/WARN)"
+platform-evidence-dossier-pipeline,0,PASS,,ots,studio-cold-discovery,"cold-discovery clean control (real OTS, audited PASS/WARN)"
+port-scheduler-slo-envelope-builder,1,FAIL,verifier-baked-in-agent-image,ots,studio-cold-discovery,"cold-discovery confirmed defect (Layer-2 reviewer, blind sample); Verifier helper baked into agent-readable /tests/ with no committed source copy: agent-wri"
+position-delete-compaction-plan-20260514T234645Z-75c78cb3,0,PASS,,ots,studio-cold-discovery,"cold-discovery clean control (real OTS, audited PASS/WARN)"
+pytorch-cpp-extension-memory-layout,0,PASS,,ots,studio-cold-discovery,"cold-discovery clean control (real OTS, audited PASS/WARN)"
+rail-yard-biomonitor-forecast,0,PASS,,ots,studio-cold-discovery,"cold-discovery clean control (real OTS, audited PASS/WARN)"
+rail-yard-envelope-pipeline,0,PASS,,ots,studio-cold-discovery,"cold-discovery clean control (real OTS, audited PASS/WARN)"
+rail-yard-shadow-crosswalk-pipeline,0,PASS,,ots,studio-cold-discovery,"cold-discovery clean control; static leakage flag REFUTED by Layer-2 review (input/verify-time-only, not baked answer)"
+railyard-batch-orchestrator,0,PASS,,ots,studio-cold-discovery,"cold-discovery clean control (real OTS, audited PASS/WARN)"
+rig-telemetry-inspector,0,PASS,,ots,studio-cold-discovery,"cold-discovery clean control (real OTS, audited PASS/WARN)"
+sat-audit-compat-bridge,0,PASS,,ots,studio-cold-discovery,"cold-discovery clean control (real OTS, audited PASS/WARN)"
+scada-calibration-pipeline,0,PASS,,ots,studio-cold-discovery,"cold-discovery clean control (real OTS, audited PASS/WARN)"
+scanner-sync-daemon,1,FAIL,undiscoverable-required-rule,ots,studio-cold-discovery,"cold-discovery confirmed defect (Layer-2 reviewer, blind sample); Equal-priority merge tie-break is undiscoverable: not in instruction and not exercised by "
+sdwan-shadow-generator-pipeline,0,PASS,,ots,studio-cold-discovery,"cold-discovery clean control (real OTS, audited PASS/WARN)"
+sensor-calibration-compiler,0,PASS,,ots,studio-cold-discovery,"cold-discovery clean control; static leakage flag REFUTED by Layer-2 review (input/verify-time-only, not baked answer)"
+serialized-shadow-compiler,0,PASS,,ots,studio-cold-discovery,"cold-discovery clean control (real OTS, audited PASS/WARN)"
+slo-budget-packet-reconciler,1,FAIL,truth-baked-answer-key,ots,studio-cold-discovery,"cold-discovery confirmed defect (Layer-2 reviewer, blind sample); Answer-key leakage: Dockerfile bakes the precomputed truth (budgets + reconciliation_hash "
+staged-phi-bypass,0,PASS,,ots,studio-cold-discovery,"cold-discovery clean control (real OTS, audited PASS/WARN)"
+stale-build-record-pruner,0,PASS,,ots,studio-cold-discovery,"cold-discovery clean control (real OTS, audited PASS/WARN)"
+stale-cache-offset-purge,0,PASS,,ots,studio-cold-discovery,"cold-discovery clean control (real OTS, audited PASS/WARN)"
+stale-ledger-rollback,0,PASS,,ots,studio-cold-discovery,"cold-discovery clean control (real OTS, audited PASS/WARN)"
+streaming-proxy-memory-cascade,0,PASS,,ots,studio-cold-discovery,"cold-discovery clean control (real OTS, audited PASS/WARN)"
+telemetry-aggregator-compliance,0,PASS,,ots,studio-cold-discovery,"cold-discovery clean control (real OTS, audited PASS/WARN)"
+telemetry-bundle-concurrency,0,PASS,,ots,studio-cold-discovery,"cold-discovery clean control (real OTS, audited PASS/WARN)"
+telemetry-provenance-pipeline-20260511T023508Z-38e52e6b,0,PASS,,ots,studio-cold-discovery,"cold-discovery clean control (real OTS, audited PASS/WARN)"
+telemetry-replay-engine,0,PASS,,ots,studio-cold-discovery,"cold-discovery clean control (real OTS, audited PASS/WARN)"
+timezone-jwt-pipeline,0,PASS,,ots,studio-cold-discovery,"cold-discovery clean control (real OTS, audited PASS/WARN)"
+yard-replay-shrinker,0,PASS,,ots,studio-cold-discovery,"cold-discovery clean control (real OTS, audited PASS/WARN)"
+huarong-dao-solver,0,PASS,,public-tb,terminal-bench-core,public Terminal-Bench clean precision control
+interactive-maze-game,0,PASS,,public-tb,terminal-bench-core,public Terminal-Bench clean precision control
+tree-directory-parser,0,PASS,,public-tb,terminal-bench-core,public Terminal-Bench clean precision control
+merge-diff-arc-agi-task,0,PASS,,public-tb,terminal-bench-core,public Terminal-Bench clean precision control
+polyglot-c-py,0,PASS,,public-tb,terminal-bench-core,public Terminal-Bench clean precision control
+large-scale-text-editing,0,PASS,,public-tb,terminal-bench-core,public Terminal-Bench clean precision control
+protocol-analysis-rs,0,PASS,,public-tb,terminal-bench-core,public Terminal-Bench clean precision control
+run-pdp11-code,0,PASS,,public-tb,terminal-bench-core,public Terminal-Bench clean precision control
+neuron-to-jaxley-conversion,0,PASS,,public-tb,terminal-bench-core,public Terminal-Bench clean precision control
+vimscript-vim-quine,0,PASS,,public-tb,terminal-bench-core,public Terminal-Bench clean precision control
+modernize-fortran-build,0,PASS,,public-tb,terminal-bench-core,public Terminal-Bench clean precision control
+git-multibranch,0,PASS,,public-tb,terminal-bench-core,public Terminal-Bench clean precision control
+distribution-search,0,PASS,,public-tb,terminal-bench-core,public Terminal-Bench clean precision control
+cron-broken-network,0,PASS,,public-tb,terminal-bench-core,public Terminal-Bench clean precision control
+cross-entropy-method,0,PASS,,public-tb,terminal-bench-core,public Terminal-Bench clean precision control
+multi-source-data-merger,0,PASS,,public-tb,terminal-bench-core,public Terminal-Bench clean precision control
+optimal-transport,0,PASS,,public-tb,terminal-bench-core,public Terminal-Bench clean precision control
+model-extraction-relu-logits,0,PASS,,public-tb,terminal-bench-core,public Terminal-Bench clean precision control
+intrusion-detection,0,PASS,,public-tb,terminal-bench-core,public Terminal-Bench clean precision control
+word2vec-from-scratch,0,PASS,,public-tb,terminal-bench-core,public Terminal-Bench clean precision control
+catch-me-if-you-can,0,PASS,,public-tb,terminal-bench-core,public Terminal-Bench clean precision control
+regex-chess,0,PASS,,public-tb,terminal-bench-core,public Terminal-Bench clean precision control
+spinning-up-rl,0,PASS,,public-tb,terminal-bench-core,public Terminal-Bench clean precision control
+vul-flink,0,PASS,,public-tb,terminal-bench-core,public Terminal-Bench clean precision control
+torch-tensor-parallelism,0,PASS,,public-tb,terminal-bench-core,public Terminal-Bench clean precision control
+video-processing,0,PASS,,public-tb,terminal-bench-core,public Terminal-Bench clean precision control
+play-zork,0,PASS,,public-tb,terminal-bench-core,public Terminal-Bench clean precision control
+path-tracing-reverse,0,PASS,,public-tb,terminal-bench-core,public Terminal-Bench clean precision control
+sanitize-git-repo,0,PASS,,public-tb,terminal-bench-core,public Terminal-Bench clean precision control
+custom-memory-heap-crash,0,PASS,,public-tb,terminal-bench-core,public Terminal-Bench clean precision control
+chess-best-move,0,PASS,,public-tb,terminal-bench-core,public Terminal-Bench clean precision control
+fix-git,0,PASS,,public-tb,terminal-bench-core,public Terminal-Bench clean precision control
+make-mips-interpreter,0,PASS,,public-tb,terminal-bench-core,public Terminal-Bench clean precision control
+recover-obfuscated-files,0,PASS,,public-tb,terminal-bench-core,public Terminal-Bench clean precision control
+cartpole-rl-training,0,PASS,,public-tb,terminal-bench-core,public Terminal-Bench clean precision control
+sparql-professors-universities,0,PASS,,public-tb,terminal-bench-core,public Terminal-Bench clean precision control
+tune-mjcf,0,PASS,,public-tb,terminal-bench-core,public Terminal-Bench clean precision control
+3d-model-format-legacy,0,PASS,,public-tb,terminal-bench-core,public Terminal-Bench clean precision control
+grid-pattern-transform,0,PASS,,public-tb,terminal-bench-core,public Terminal-Bench clean precision control
+attention-mil,0,PASS,,public-tb,terminal-bench-core,public Terminal-Bench clean precision control
