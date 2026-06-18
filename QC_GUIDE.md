@@ -184,6 +184,46 @@ task run required.
 > `{"task","area":"instructions|tests|solution","severity":"PASS|WARN|FAIL","title","location","detail","fix"}`
 > using the stable titles below. Emit one PASS `*-ok` per clean area.
 
+## Sub-agent orchestration: review + verify (Layer 2 driver)
+
+Run the static gates first, then fan out **one sub-agent per task, in parallel
+batches** (independent tasks → embarrassingly parallel). Each agent does two jobs
+at once, so semantic review and false-positive control cost the same single agent:
+
+1. **Semantic deep-dive** — the 5 checks above.
+2. **Adversarial verification of this task's static findings** — it is handed the
+   static findings for its task and must try to **refute** each FAIL/WARN: read the
+   build context and decide if the flag is a real, exploitable defect or a false
+   positive (e.g. a "leak" path that's actually instruction-referenced input).
+
+The agent writes a JSON array to `qc_out/sem_<task>.json`. Re-running
+`aggregate.py` then **auto-drops refuted false positives** (precision win) and
+folds in the semantic findings (recall win). This is the funnel: cheap static on
+all tasks → judgment agents only where judgment is needed, verifying static's own
+output.
+
+### Verification output convention (consumed by `aggregate.py`)
+
+In addition to normal semantic findings, the agent emits one meta finding per
+static flag it reviewed:
+- refute a false positive: `{"task","area","title":"verify-refuted","ref":"<static-title>","severity":"PASS","detail":"why it's a FP"}` → that static finding is dropped from the verdict.
+- confirm a real one: `{"task","area","title":"verify-confirm","ref":"<static-title>","severity":"PASS","detail":"evidence"}` → informational; verdict unchanged.
+
+### Combined sub-agent prompt
+
+> Review the single task at `<TASK_DIR>`. Its static QC findings: `<STATIC_FINDINGS_JSON>`.
+> **(A) Semantic deep-dive** — apply the 5 checks (instruction↔verifier alignment,
+> comprehensive tests, hygiene, golden-patch correctness, realism); emit a finding
+> per issue (and a `*-ok` PASS per clean area).
+> **(B) Verify the static findings** — for each FAIL/WARN above, read the relevant
+> files and try to REFUTE it. If it's a false positive, emit
+> `{"title":"verify-refuted","ref":"<that title>","severity":"PASS","area":<same>,"task":...,"detail":...}`.
+> If it's real, emit `verify-confirm` with evidence. Default to leaving a flag in
+> place unless you can clearly show it's a false positive.
+> Output ONLY a JSON array of findings (schema:
+> `{"task","area","severity","title","location","detail","fix"}`, plus `ref` on the
+> verify-* metas). Write it to `qc_out/sem_<task>.json`.
+
 ## Out of scope here: behavioral
 
 The runtime **oracle/no-op** gate (reference solution → pass, untouched container

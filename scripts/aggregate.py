@@ -48,6 +48,28 @@ def load_findings(d):
     return out
 
 
+def reconcile(findings):
+    """Apply sub-agent verification verdicts to static findings.
+
+    A review sub-agent can emit a meta finding `{"title":"verify-refuted",
+    "ref":"<static-title>","task":...}` to mark a static flag a false positive,
+    or `verify-confirm` to confirm one. Refuted static findings are dropped before
+    verdicts are computed (precision win); the meta findings themselves never roll
+    into a verdict. Returns (findings_for_verdict, n_refuted_dropped).
+    """
+    refuted = {(f["task"], f["ref"]) for f in findings
+               if f.get("title") == "verify-refuted" and f.get("ref")}
+    out, dropped = [], 0
+    for f in findings:
+        if f.get("title") in ("verify-refuted", "verify-confirm"):
+            continue
+        if (f["task"], f.get("title")) in refuted:
+            dropped += 1
+            continue
+        out.append(f)
+    return out, dropped
+
+
 def per_task(findings):
     tasks = defaultdict(lambda: defaultdict(list))
     for f in findings:
@@ -189,6 +211,9 @@ def main():
     os.makedirs(out_dir, exist_ok=True)
 
     findings = load_findings(args.findings_dir)
+    findings, n_refuted = reconcile(findings)
+    if n_refuted:
+        print(f"  reconcile: dropped {n_refuted} static finding(s) refuted by review sub-agents")
     tasks = per_task(findings)
     rows = verdicts(tasks)
 

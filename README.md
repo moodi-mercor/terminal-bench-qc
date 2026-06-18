@@ -13,7 +13,6 @@ Checks run cheapest-first, so it scales to thousands of tasks:
 | **Static** | missing files, bad metadata, leaked answers, fake/vacuous tests, fragile `solve.sh` | `run_static_qc.py` — 6 deterministic gates, no task run |
 | **Semantic** | unfair/brittle tests, instruction↔test mismatch, weak golden solution | one sub-agent per task (rubric in `QC_GUIDE.md`) |
 | **Dataset** | overlap with public benchmarks, near-duplicates | `decontaminate.py` |
-| **Behavioral** | does the solution actually pass? does "do nothing" correctly fail? | **out of scope — runs at delivery** (needs harbor + Modal) |
 
 Every check returns **PASS / WARN / FAIL**; a task's verdict is its worst check.
 
@@ -94,12 +93,16 @@ python scripts/score_qc.py /tmp/fx/review-ssot.csv eval/golden_labels.csv
 | `fail/reference-reads-truth` | **FAIL** | `reference-solve-reads-truth` |
 | `fail/unconditional-reward` | **FAIL** | `unconditional-reward` |
 
-On a **real 15-task OTS sample**, the static layer flagged **2 defects** (`cloud-cost-anomaly-auditor`, `dra-calibration-integrity-pipeline` — both baked-answer leaks) with no false positives after tuning.
+`eval/golden_labels.csv` also labels real OTS examples — two known-defective tasks (`cloud-cost-anomaly-auditor`, `dra-calibration-integrity-pipeline`, both baked-answer leaks) plus several clean ones. Pull them with the key and score the same way:
 
-To include the real OTS examples (needs the key): `python scripts/studio_pull.py --names @eval/ots_tasks.txt --out tasks_cache`. Details in [`eval/README.md`](eval/README.md).
+```bash
+python scripts/studio_pull.py --names @eval/ots_tasks.txt --out tasks_cache
+```
+
+Details in [`eval/README.md`](eval/README.md).
 
 ## Notes
 
-- **Behavioral runs at delivery, not here.** Broken solutions and tests that only fail at runtime are caught by the oracle/no-op gate on the client's infra; this skill catches the statically-decidable half and feeds that gate.
-- **`references/` is local-only** (client feedback, internal rubric, golden example tasks) — gitignored on purpose. `QC_GUIDE.md` carries the public-safe criteria.
-- **Provenance:** built from real client validation feedback (NVIDIA, MAI, GDM, Reflection, and the first/second 5k reports). Every gate targets a defect those reviews actually caught.
+- **Static flags are candidates, not verdicts.** Severity reflects likelihood; confirm a flagged leak actually survives the build and is exploitable before treating it as a real defect, and drive recall to 100% before tuning precision.
+- **Decontamination is a lexical baseline.** `decontaminate.py` uses TF-IDF cosine over `data/decontam_corpus.jsonl`; swap the vectorizer for embeddings for an embedding-cosine version (same thresholds, same report).
+- The full rubric — every check, the false-positive rules, and the per-task deep-dive prompt for the semantic layer — lives in [`QC_GUIDE.md`](QC_GUIDE.md).
