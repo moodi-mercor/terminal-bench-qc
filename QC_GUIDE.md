@@ -104,6 +104,68 @@ approach.
 
 ---
 
+## Deep-dive QC routine (per-task, trajectory-aware)
+
+Run this as one sub-agent per task, *in addition* to the static + semantic
+passes. It captures the high-signal checks that surface real defects — especially
+the trajectory reading (#2) and the setup/runtime/cleanup fairness probe (#7),
+which static screening misses.
+
+1. **Instruction ↔ verifier alignment** — everything in the prompt is tested, and
+   everything tested is in the prompt (or discoverable in the agent-visible env).
+2. **Reward-hackable criteria / test cases** — read the `evals/` folder and the
+   agent **trajectories** if present. Flag any case where the agent benefits from
+   access it shouldn't have, uses a disallowed approach, or hardcodes solutions.
+   **Even if the trajectory looks clean, spawn an adversarial sub-agent that tries
+   to cheat** — satisfy the verifier *outside* a genuine developer approach
+   (hardcode expected outputs, write the expected files/rows directly, stub
+   IDs/timestamps, read leaked state, move a forbidden literal into a swapped
+   file). Any working exploit ⇒ **FAIL**; the fix is an assertion that closes it,
+   after which the golden solution must still pass.
+3. **Comprehensive test cases** — rubric and/or unit tests verify **every part of
+   the instruction**, across both the correctness route and the optimal-solution
+   route. Flag brittle tests that go flaky across runs, and tests that
+   over-constrain the path via hardcoded literals / functions / strings.
+4. **Hygiene** — grammar, typos, markdown/LaTeX.
+5. **Golden-patch correctness** — confirm the golden solution mirrors the happy
+   path and would score 100%. In chain-of-thought, **first identify the underlying
+   algorithm/method** the task calls for, **then** check the golden patch against
+   a top/canonical solution for that method — confirm it solves the problem
+   properly, not via a shortcut that only works because of test structure.
+6. **Task realism** — `instruction.md` aligns with a real developer workflow
+   plausibly found in modern coding-agent data.
+7. **Task fairness + cheating potential** — deep-dive the environment across
+   **setup, runtime, and cleanup** to confirm the agent's context is **exactly**
+   what the instruction/README defines and nothing more. **Spawn an adversarial
+   sub-agent that tries to reach other parts of the environment** (leaked files,
+   build artifacts, network, sibling containers/services) to confirm it cannot.
+
+### Ready-to-run deep-dive sub-agent prompt
+
+> Do a deep-dive QC run on `<TASK_DIR>` for the seven checks below. Read
+> `instruction.md`, `tests/`, `solution/`, `environment/Dockerfile` + setup
+> scripts, and the `evals/`/trajectory files if present.
+> 1. **Instruction↔verifier alignment** — everything in the prompt is tested;
+>    everything tested is in the prompt or discoverable in the env.
+> 2. **Reward-hackable criteria** — read evals/trajectories; flag access the agent
+>    shouldn't have, disallowed approaches, or hardcoded solutions. Then act as an
+>    adversary: find a way to pass the verifier without genuinely solving the task.
+>    Report any exploit + the assertion that would close it.
+> 3. **Comprehensive tests** — every part of the instruction is verified on both
+>    the correctness and optimal-solution routes; flag flaky/brittle tests and
+>    over-constraining hardcoded literals/functions/strings.
+> 4. **Hygiene** — grammar, typos, formatting.
+> 5. **Golden-patch correctness** — in your reasoning, first name the underlying
+>    algorithm/method, then verify the golden solution matches a canonical
+>    solution and would score 100% (no shortcut).
+> 6. **Realism** — the task resembles a real developer workflow.
+> 7. **Fairness** — trace setup→runtime→cleanup; confirm the agent sees only what
+>    the instruction defines. Adversarially probe for reachable leaked
+>    files/artifacts/network/other env parts.
+> Output a JSON array of findings:
+> `{"task","area":"instructions|tests|solution|anti_cheat","severity":"PASS|WARN|FAIL","title","location","detail","fix"}`
+> using the stable titles below. Emit one PASS `*-ok` per clean area.
+
 ## Out of scope here: behavioral
 
 The runtime **oracle/no-op** gate (reference solution → pass, untouched container
@@ -122,6 +184,8 @@ Use these exact titles so the histogram groups cleanly:
 `expert-time-out-of-range`, `cpus-above-client-cap`, `dockerfile-copies-solution`,
 `dockerfile-copies-tests`, `truth-baked-verifier-reads`, `tests-bake-verifier-reads`,
 `untested-requirement`, `phantom-test`, `brittle-string-match`, `weak-assertion`,
-`over-specified-instruction`, `hardcoded-solution`, `instruction-clarity`,
-`spelling-grammar`, `semantic-cheat-vector`, `public-benchmark-contamination`,
-`near-duplicate-in-set`. Append `*-ok` (e.g. `tests-ok`) for clean PASS findings.
+`flaky-test`, `over-specified-instruction`, `hardcoded-solution`,
+`reward-hackable`, `env-fairness-breach`, `golden-patch-mismatch`,
+`task-realism`, `instruction-clarity`, `spelling-grammar`, `semantic-cheat-vector`,
+`public-benchmark-contamination`, `near-duplicate-in-set`. Append `*-ok` (e.g.
+`tests-ok`) for clean PASS findings.

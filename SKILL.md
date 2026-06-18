@@ -71,8 +71,11 @@ Writes per-gate findings JSON + `review-ssot.csv`, `review-ssot.md`,
 `defect-distribution.md` into `qc_out/`.
 
 ### 3. Semantic QC (Layer 2) — dispatch one sub-agent per task
-Follow `references/semantic-review-prompt.md`. Hand each agent the task dir + its
-static findings; collect the returned JSON into `qc_out/`.
+Use the rubric + the **deep-dive routine (7 checks)** and ready-to-run prompt in
+`QC_GUIDE.md`. Hand each agent the task dir + its static findings; collect the
+returned JSON into `qc_out/`. The deep-dive adds trajectory/`evals` reading, an
+adversarial cheat-spawn, golden-patch correctness (identify the algorithm first,
+then compare), and a setup→runtime→cleanup fairness probe.
 
 ### 4. Aggregate everything
 ```bash
