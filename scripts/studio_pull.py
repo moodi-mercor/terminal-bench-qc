@@ -128,6 +128,8 @@ def main():
     ap.add_argument("--out", default="tasks_cache")
     ap.add_argument("--world", default=WORLD)
     ap.add_argument("--task-id", default=None, help="pull a single task by id")
+    ap.add_argument("--names", default=None,
+                    help="comma-separated task names, or @file with one name per line")
     ap.add_argument("--list", action="store_true", help="list tasks and exit")
     args = ap.parse_args()
     key = load_key()
@@ -144,6 +146,17 @@ def main():
         tasks = [t for t in tasks if t["task_id"] == args.task_id]
         if not tasks:
             sys.exit(f"task-id {args.task_id} not found in world")
+    elif args.names:
+        if args.names.startswith("@"):
+            wanted = [ln.strip() for ln in open(args.names[1:]) if ln.strip()
+                      and not ln.startswith("#")]
+        else:
+            wanted = [n.strip() for n in args.names.split(",") if n.strip()]
+        by_name = {t.get("task_name"): t for t in tasks}
+        tasks = [by_name[n] for n in wanted if n in by_name]
+        missing = [n for n in wanted if n not in by_name]
+        if missing:
+            print(f"  ! {len(missing)} name(s) not found: {missing}")
     else:
         tasks = tasks[:args.n]
 

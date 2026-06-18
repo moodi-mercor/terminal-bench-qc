@@ -219,6 +219,26 @@ def _truth_bake(root, name):
               and not v.startswith("/tmp")}
     read_hits = sorted(p for p in baked if p in vreads
                        or any(os.path.basename(p) == os.path.basename(v) for v in vreads))
+    # Precision filter: a baked file the verifier reads is only "truth" if it
+    # plausibly holds the expected answer. Source-code files (scaffold the agent
+    # works on) and files under input-looking dirs (the task's own inputs) are NOT
+    # truth unless their name is explicitly truthy. Keeps real value-file leaks
+    # (e.g. /opt/valid_initial_count.txt) while dropping input/source false-positives.
+    SRC_EXT = (".py", ".go", ".c", ".cc", ".cpp", ".h", ".hpp", ".js", ".ts",
+               ".java", ".rs", ".rb", ".sh", ".pl", ".php", ".scala", ".kt")
+    INPUT_DIR = re.compile(r"/(incoming|inputs?|raw|fixtures?|samples?|corpus|"
+                           r"evidence|data/in|uploads?|feed)s?/", re.I)
+
+    def is_truth_candidate(p):
+        if TRUTHY.search(os.path.basename(p)):
+            return True
+        if p.lower().endswith(SRC_EXT):
+            return False
+        if INPUT_DIR.search(p):
+            return False
+        return True
+
+    read_hits = [p for p in read_hits if is_truth_candidate(p)]
     truthy = sorted(p for p in baked if TRUTHY.search(os.path.basename(p)))
     if read_hits:
         # FP rule: if every read path is instruction-referenced, it is task INPUT

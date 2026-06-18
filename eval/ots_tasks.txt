@@ -1,0 +1,12 @@
+# Real OTS tasks referenced in eval/golden_labels.csv, pulled with studio_pull.
+# Needs RLS_KEY in .env. Usage:
+#   python scripts/studio_pull.py --names @eval/ots_tasks.txt --out tasks_cache
+# Known-defective (current Studio snapshot):
+cloud-cost-anomaly-auditor
+dra-calibration-integrity-pipeline
+# Good examples (report leaks already remediated -> truth now in tests/.truth or /tmp):
+telemetry-command-bus
+isolation-perimeter-validator
+orbit-attestation-consolidator
+schema-skew-audit
+shadow-fuzz-pipeline
