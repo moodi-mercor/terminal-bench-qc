@@ -6,17 +6,33 @@ Find quality defects in Terminal-Bench OTS tasks **before they ship**, and repor
 
 ## How it works
 
-Checks run cheapest-first, so it scales to thousands of tasks:
+A task is flagged by a stack of checks that run **cheapest-first**, so it scales to
+thousands of tasks while reserving the expensive checks for where they're needed. Each
+layer catches what the cheaper one structurally cannot:
 
-| Layer | What it catches | How |
-|---|---|---|
-| **Static** | missing files, bad metadata, leaked answers, fake/vacuous tests, fragile `solve.sh` | `run_static_qc.py` — 6 deterministic gates, no task run |
-| **Semantic** | unfair/brittle tests, instruction↔test mismatch, weak golden solution | one sub-agent per task (rubric in `QC_GUIDE.md`) |
-| **Dataset** | overlap with public benchmarks, near-duplicates | `decontaminate.py` |
+| Layer | Stance / question | What it catches | How |
+|---|---|---|---|
+| **1. Static** | *what shape is this?* | missing files, bad metadata, leaked answers, fake/vacuous tests, fragile `solve.sh` | `run_static_qc.py` — **9 deterministic gates**, no task run (free) |
+| **2. Semantic reviewer** | *is this task correct?* | unfair/brittle tests, instruction↔test mismatch, weak golden solution; also clears Part-1 false positives | one sub-agent per task (rubric in `QC_GUIDE.md`) |
+| **3. Adversary** | *can I cheat it?* | reward hacks — pass the tests without doing the work (hardcode, fake artifact, force the reward) | a *separate* sub-agent per task, opposite stance from #2 |
+| **4. Dataset** | *is this original?* | overlap with public benchmarks, near-duplicates | `decontaminate.py` |
+| **Behavioral** *(opt-in)* | *does it actually run right?* | weak verifiers a **no-op passes**, and **broken oracles** (the reference solution fails its own tests) | `check_behavioral.py --execute` — builds + runs the task: oracle must score 1, no-op must score 0 |
 
-Every check returns **PASS / WARN / FAIL**; a task's verdict is its worst check.
+Every check returns **PASS / WARN / FAIL**; a task's verdict is its worst check. Layers
+1–4 only *read* files; **behavioral is the only layer that runs the task**, so it's the
+only sure catch for "a no-op passes" / "the oracle fails" — which is why it's a distinct,
+opt-in step (it needs Docker and executes code).
 
-> Static flags are *candidates*, not final verdicts — a flagged "leak" is confirmed by building the image and checking the file is really readable. Drive **recall to 100% first**, then improve precision.
+> **Static flags are *candidates*, not verdicts** — a flagged "leak" is confirmed (or
+> refuted) by the Part-2 reviewer, e.g. by checking the file is really agent-readable and
+> read as the answer. Drive **recall to 100% first**, then improve precision.
+
+> **A "clean" task only earns that label from the layers you actually ran on it.** A
+> control waved through on Part-1 static alone is *unverified*, not *clean*: in the eval's
+> clean-label audit, 2 public-TerminalBench controls that had only seen static turned out
+> to be defective (a no-op-passes verifier and a broken oracle) — defects that by
+> construction only Parts 2–3 and behavioral can catch. See `eval/README.md`
+> "Clean-label audit." Run the same stack on controls that you run on candidates.
 
 ## Setup
 

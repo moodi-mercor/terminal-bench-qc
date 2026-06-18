@@ -12,3 +12,4 @@ qc_out/
 qc_out_tb/
 references/
 findings_behavioral.json
+tasks_cache_v200/

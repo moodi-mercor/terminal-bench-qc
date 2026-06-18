@@ -1,0 +1,11 @@
+[
+  {
+    "task": "coldchain-shadow-generator-20260511T190617Z-5c554c4d",
+    "area": "tests",
+    "severity": "FAIL",
+    "title": "Verifier never runs the agent's script; output dirs are oracle-only side effects (correct agent scores 0)",
+    "location": "tests/test_outputs.py:9-10,25-163 read /var/lib/coldchain/shadows_single and /shadows_parallel; only solution/solve.sh:243-258 ever populates them; tests/test.sh runs pytest only",
+    "detail": "All output-validating tests _load() pre-existing files under OUTDIR=/var/lib/coldchain/shadows_single and OUTDIR_PAR=/var/lib/coldchain/shadows_parallel. Nothing in tests/test.sh or test_outputs.py runs the agent's build_shadows.py to produce these from scratch (test_idempotent_reinvocation re-runs ingest but on an ALREADY-populated OUTDIR, confirming it assumes the dir exists). Only the oracle solve.sh runs the sequential (specific 5-file order) + GNU parallel ingest into those exact dirs. grep over environment/ and instruction.md for 'shadows_single'/'shadows_parallel' returns nothing (exit 1) \u2014 the paths are undiscoverable. The instruction tells the agent to IMPLEMENT the script but never to RUN it, and never names any output directory. Result: an agent that writes a fully correct build_shadows.py still scores ~0 (FileNotFoundError on every _load), because the verifier depends on the oracle's solve.sh execution side-effects rather than on the agent producing outputs. Oracle passes, every non-oracle solution fails.",
+    "fix": "Have tests/test.sh (or a test fixture) run the agent's build_shadows.py against both OUTDIRs (sequential + parallel) before assertions, AND document the required output directories + that the agent must run ingest/finalize, in instruction.md. Alternatively rewrite tests to invoke the pipeline themselves and assert on the produced files."
+  }
+]

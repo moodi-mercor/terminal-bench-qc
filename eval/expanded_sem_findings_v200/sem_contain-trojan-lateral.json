@@ -1,0 +1,11 @@
+[
+  {
+    "task": "contain-trojan-lateral",
+    "area": "tests",
+    "severity": "FAIL",
+    "title": "Exact-substring '10.55.0.0/16 drop' false-rejects idiomatic correct nftables configs",
+    "location": "tests/test_outputs.py:test_check_3 (assert '10.55.0.0/16 drop' in /etc/nftables.conf)",
+    "detail": "instruction.md only requires 'Completely block all outbound traffic to 10.55.0.0/16 by configuring nftables in /etc/nftables.conf' and never mandates the exact rule expression. test_check_3 requires the literal substring '10.55.0.0/16 drop'. A correct, common config such as 'ip daddr 10.55.0.0/16 counter drop' (the produced string is '10.55.0.0/16 counter drop'), a verdict map, or a chain with 'policy drop' (no per-subnet rule at all) all correctly block the subnet but do NOT contain '10.55.0.0/16 drop' and are wrongly rejected. The agent has no signal that the bare 'drop' token without 'counter' is required.",
+    "fix": "Replace the substring check with a tolerant match, e.g. assert re.search(r'10\\.55\\.0\\.0/16[^\\n]*\\bdrop\\b', output) so 'counter drop'/comments pass, and/or accept a chain-level 'policy drop'. Alternatively functionally verify the block by exercising nft (which would also test the persistence property)."
+  }
+]
