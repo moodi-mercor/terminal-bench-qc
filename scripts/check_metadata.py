@@ -20,9 +20,14 @@ Emits findings with area="metadata".
 """
 import argparse
 import os
+import re
 
-from common import (FAIL, WARN, PASS, finding, emit,
+from common import (FAIL, WARN, PASS, finding, emit, read_text,
                     discover_tasks, task_paths, load_toml, get)
+
+# heavy workloads that routinely need >4 GB (customer hit OOM at memory_mb=4096)
+HEAVY_WORKLOAD = re.compile(r"\b(spark|pyspark|neo4j|elasticsearch|hadoop|milvus|"
+                            r"clickhouse|cassandra|-Xmx[0-9]*[gG])\b", re.I)
 
 VALID_DIFFICULTY = {"easy", "medium", "hard"}
 GENERIC_CATEGORIES = {"programming", "general", "code", "task", "misc", "other", ""}
@@ -190,6 +195,20 @@ def check_task(name, root):
                            detail=f"memory_mb={mem}: exceeds the common ~4 GB client cap.",
                            location="task.toml [environment]",
                            fix="Confirm the task runs within ~4 GB or flag the requirement."))
+
+    # heavy workload vs declared memory (customer OOM'd at 4096 on Spark/Neo4j/ES)
+    if mem is None or mem <= 4096:
+        blob = (read_text(p["Dockerfile"]) + "\n" + read_text(p["solve.sh"]) + "\n"
+                + read_text(p["test.sh"]) + "\n" + read_text(p["test_outputs.py"]))
+        m = HEAVY_WORKLOAD.search(blob)
+        if m:
+            out.append(finding(name, "metadata", WARN, "memory-vs-workload",
+                               detail=f"task uses a heavy workload (`{m.group(1)}`) but "
+                                      f"memory_mb={mem if mem is not None else 'unset'} "
+                                      "(<=4096) — likely OOM (Spark/Neo4j/ES/JVM need 8-16 GB).",
+                               location="task.toml [environment]",
+                               fix="Raise memory_mb to what the workload needs, or use a smaller "
+                                   "test workload/dataset."))
 
     if not out:
         out.append(finding(name, "metadata", PASS, "metadata-ok"))

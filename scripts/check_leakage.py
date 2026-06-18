@@ -248,11 +248,42 @@ def _truth_bake(root, name):
     return []
 
 
+def _reference_solve_reads_truth(root, name):
+    """The reference solve.sh reads the very truth path the verifier compares
+    against — i.e. it "solves" the task by reading the answer (14 tasks in the
+    customer's second-5k audit). Pure static, high-value anti-cheat."""
+    vtxt = _verifier_text(root)
+    truth_paths = set()
+    for m in OPEN_ABS.finditer(vtxt):
+        p = m.group(1) or m.group(2)
+        if (p and TRUTHY.search(os.path.basename(p))
+                and not p.startswith("/tmp") and not p.startswith("/tests")):
+            truth_paths.add(p)
+    if not truth_paths:
+        return []
+    sol = read_text(task_paths(root)["solve.sh"])
+    for h in glob.glob(os.path.join(root, "solution", "**", "*"), recursive=True):
+        if os.path.isfile(h):
+            sol += "\n" + read_text(h)
+    hits = sorted(p for p in truth_paths
+                  if p in sol or os.path.basename(p) in sol)
+    if hits:
+        return [finding(name, "anti_cheat", FAIL, "reference-solve-reads-truth",
+                        detail=f"solution/solve.sh references {hits}, the same truth path the "
+                               "verifier compares against — the reference solves by reading the "
+                               "answer, not by doing the task.",
+                        location="solution/solve.sh",
+                        fix="Make the reference solve the task for real; move the truth file to "
+                            "tests/.truth/ (verify-time only) so neither agent nor solve can read it.")]
+    return []
+
+
 def check_task(name, root):
     out = []
     out += _dockerfile_copies(root, name)
     out += _tests_bake(root, name)
     out += _truth_bake(root, name)
+    out += _reference_solve_reads_truth(root, name)
     # keep both reported dimensions populated with a PASS sentinel when clean
     areas = {f["area"] for f in out}
     if "dockerfile" not in areas:

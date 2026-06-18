@@ -61,6 +61,14 @@ agent truly can't reach something, and container/network isolation (an infra
 guarantee). Reading `tests/`/`solution/` at solve time is architecturally
 impossible (verify-time mounts).
 
+**Portability** (`check_portability.py`): the `solve.sh`/test defects that
+dominated the customer's validation tail and are visible by reading the files —
+**backgrounded-daemon-no-redirect** (pipe-hang, their #1 lever), **pip without
+--break-system-packages** (PEP 668), **server-defined-not-started**,
+**redis-no-daemonize**, **mixed-bash-python solve**, **broad pkill -f**, plus test
+**systemd-assumption** and **cmd-entrypoint-reliance**. (A real reward=1.0 smoke
+run is still the definitive catch — this flags them pre-run.)
+
 **Leakage / anti-cheat** (`check_leakage.py`): the agent's container is built
 **only** from `environment/Dockerfile`; `tests/` and `solution/` are mounted at
 verify time and must never be COPY'd in. Flag:
@@ -200,4 +208,8 @@ Use these exact titles so the histogram groups cleanly:
 `vacuous-test`, `swallowed-assertion`, `existence-only-check`, `no-assertion-test`,
 `test-sh-swallows-failure`, `unconditional-reward`, `agent-writable-reward-signal`,
 `leftover-generator`, `uncleaned-setup-script`, `git-history-exposed`,
-`runtime-network`. Append `*-ok` (e.g. `tests-ok`) for clean PASS findings.
+`runtime-network`, `reference-solve-reads-truth`, `memory-vs-workload`,
+`backgrounded-daemon-no-redirect`, `pip-no-break-system-packages`,
+`server-defined-not-started`, `redis-no-daemonize`, `mixed-bash-python-solve`,
+`broad-pkill`, `systemd-assumption`, `cmd-entrypoint-reliance`. Append `*-ok`
+(e.g. `tests-ok`) for clean PASS findings.
