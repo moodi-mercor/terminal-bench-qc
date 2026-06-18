@@ -50,6 +50,17 @@ reward-hacking — tests that pass without the work, and gameable pass signals:
 These are candidates; a no-op run confirms them. (Subtle gameable logic that only
 fires at runtime is *not* statically decidable — that's the delivery-stage gate.)
 
+**Environment fairness** (`check_env_fairness.py`): the statically-decidable half
+of "task fairness" — confirm the agent's starting context is only the intended
+input by reconstructing what the build leaves in the image. Flags **leftover
+generators** (`create_*`/`generate*`/`mutate*` scripts left in the image — the
+agent can read how data/answers are made), **uncleaned setup scripts**,
+**git-history-exposed** (`git clone` with no `.git` removal), and **runtime-network**
+(the verifier fetching an external URL). What's left for the run: probing that the
+agent truly can't reach something, and container/network isolation (an infra
+guarantee). Reading `tests/`/`solution/` at solve time is architecturally
+impossible (verify-time mounts).
+
 **Leakage / anti-cheat** (`check_leakage.py`): the agent's container is built
 **only** from `environment/Dockerfile`; `tests/` and `solution/` are mounted at
 verify time and must never be COPY'd in. Flag:
@@ -124,10 +135,12 @@ Run this as one sub-agent per task, *in addition* to the static + semantic
 passes. These five checks are fully decidable by analysis (reading the task) — no
 task run required.
 
-> The statically-decidable parts of reward-hacking (vacuous tests, gameable pass
-> signals, baked-answer leaks) are caught in **Part 1** (`check_reward_hack.py`,
-> `check_leakage.py`). What remains for the delivery-stage run is *confirming* an
-> exploit actually fires and probing environment fairness — those need execution.
+> The statically-decidable parts of reward-hacking and fairness — vacuous tests,
+> gameable pass signals, baked-answer leaks, leftover generators / setup scripts /
+> git history — are caught in **Part 1** (`check_reward_hack.py`,
+> `check_leakage.py`, `check_env_fairness.py`). What remains for the delivery-stage
+> run is *confirming* an exploit actually fires and adversarially probing
+> reachability — those need execution.
 
 1. **Instruction ↔ verifier alignment** — everything in the prompt is tested, and
    everything tested is in the prompt (or discoverable in the agent-visible env).
@@ -185,5 +198,6 @@ Use these exact titles so the histogram groups cleanly:
 `golden-patch-mismatch`, `task-realism`, `instruction-clarity`, `spelling-grammar`,
 `semantic-cheat-vector`, `public-benchmark-contamination`, `near-duplicate-in-set`,
 `vacuous-test`, `swallowed-assertion`, `existence-only-check`, `no-assertion-test`,
-`test-sh-swallows-failure`, `unconditional-reward`, `agent-writable-reward-signal`.
-Append `*-ok` (e.g. `tests-ok`) for clean PASS findings.
+`test-sh-swallows-failure`, `unconditional-reward`, `agent-writable-reward-signal`,
+`leftover-generator`, `uncleaned-setup-script`, `git-history-exposed`,
+`runtime-network`. Append `*-ok` (e.g. `tests-ok`) for clean PASS findings.

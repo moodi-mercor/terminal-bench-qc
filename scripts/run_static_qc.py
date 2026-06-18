@@ -2,8 +2,8 @@
 """Run every deterministic (static) QC gate over a tasks tree and aggregate.
 
 This is the one-command entry point for Layers 0-1. It runs the structure,
-metadata, leakage, and reward-hack detectors, writes their findings JSON into an
-output directory, then produces the SSOT + defect-distribution reports.
+metadata, leakage, reward-hack, and env-fairness detectors, writes their findings
+JSON into an output directory, then produces the SSOT + defect-distribution reports.
 
 Semantic review (Layer 2) is run separately by dispatching sub-agents — see
 references/semantic-review-prompt.md and the SKILL. (Behavioral oracle/no-op is
@@ -19,6 +19,7 @@ import check_structure
 import check_metadata
 import check_leakage
 import check_reward_hack
+import check_env_fairness
 import aggregate
 from common import discover_tasks, emit
 
@@ -41,6 +42,7 @@ def main():
         ("metadata", check_metadata, "findings_metadata.json"),
         ("leakage", check_leakage, "findings_leakage.json"),
         ("reward_hack", check_reward_hack, "findings_reward_hack.json"),
+        ("env_fairness", check_env_fairness, "findings_env_fairness.json"),
     ]
     for label, mod, fname in gates:
         findings = []
