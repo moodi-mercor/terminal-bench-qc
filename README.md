@@ -79,10 +79,24 @@ The agent only sees `environment/`. `tests/` and `solution/` are mounted at grad
 
 ```bash
 python scripts/run_static_qc.py eval/fixtures --out-dir /tmp/fx
-python scripts/score_qc.py /tmp/fx/review-ssot.csv eval/golden_labels.csv   # expect precision=recall=1.0
+python scripts/score_qc.py /tmp/fx/review-ssot.csv eval/golden_labels.csv
 ```
 
-To include real OTS examples (needs the key): `python scripts/studio_pull.py --names @eval/ots_tasks.txt --out tasks_cache`. Details in [`eval/README.md`](eval/README.md).
+**Current results** — `TP=6  FP=0  FN=0  TN=1` → **precision 1.00, recall 1.00**:
+
+| Fixture | QC verdict | Defect caught |
+|---|---|---|
+| `pass/clean-records-etl` | **PASS** | — (clean) |
+| `fail/missing-solution` | **FAIL** | `missing-required-file` |
+| `fail/bad-metadata` | **FAIL** | `missing-agent-timeout` (+ generic tags, seconds-as-minutes) |
+| `fail/truth-baked` | **FAIL** | `truth-baked-verifier-reads` |
+| `fail/copies-solution` | **FAIL** | `dockerfile-copies-solution` |
+| `fail/reference-reads-truth` | **FAIL** | `reference-solve-reads-truth` |
+| `fail/unconditional-reward` | **FAIL** | `unconditional-reward` |
+
+On a **real 15-task OTS sample**, the static layer flagged **2 defects** (`cloud-cost-anomaly-auditor`, `dra-calibration-integrity-pipeline` — both baked-answer leaks) with no false positives after tuning.
+
+To include the real OTS examples (needs the key): `python scripts/studio_pull.py --names @eval/ots_tasks.txt --out tasks_cache`. Details in [`eval/README.md`](eval/README.md).
 
 ## Notes
 
