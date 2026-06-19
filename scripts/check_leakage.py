@@ -90,7 +90,53 @@ def _build_parts(root):
             rel = os.path.relpath(h, root)
             if rel not in parts and os.path.isfile(h):
                 parts[rel] = read_text(h)
+    # Append variable-resolved write paths so build-time bakes via a dir variable
+    # (os.path.join(TRUTH_DIR, 'expected_*')) are visible to WRITE_ABS.
+    for rel in list(parts):
+        exp = _expand_indirect_paths(parts[rel], "write")
+        if exp:
+            parts[rel] += "\n" + exp
     return parts
+
+
+def _expand_indirect_paths(text, mode):
+    """Resolve simple `VAR = '/abs/path'` assignments and expand
+    os.path.join(VAR, 'name'...) / f"{VAR}/name" / VAR + '/name' into concrete
+    absolute paths, returned as synthetic open() lines so WRITE_ABS / OPEN_ABS
+    catch them. Real OTS leaks (e.g. kiosk-deterministic-attest) bake the answer
+    via a dir variable — `open(os.path.join(TRUTH_DIR,'expected_replay.log'),'w')`
+    — which literal-path matching misses. `mode` is 'write' for build scripts
+    (they create the artifact) or 'read' for the verifier (it reads it)."""
+    vars = {}
+    for m in re.finditer(r"^[ \t]*(\w+)\s*=\s*['\"](/[^'\"]+)['\"]", text, re.M):
+        v = m.group(2)
+        if not v.startswith(("/tmp", "/proc", "/sys", "/dev")):
+            vars[m.group(1)] = v.rstrip("/")
+    if not vars:
+        return ""
+    resolved = []
+    for m in re.finditer(r"os\.path\.join\(\s*(\w+)\s*((?:,\s*['\"][^'\"]+['\"]\s*)+)\)", text):
+        if m.group(1) in vars:
+            segs = re.findall(r"['\"]([^'\"]+)['\"]", m.group(2))
+            resolved.append(vars[m.group(1)] + "/" + "/".join(segs))
+    for m in re.finditer(r"f['\"]\{(\w+)\}(/[^'\"{}]+)['\"]", text):
+        if m.group(1) in vars:
+            resolved.append(vars[m.group(1)] + m.group(2))
+    for m in re.finditer(r"(\w+)\s*\+\s*['\"](/[^'\"]+)['\"]", text):
+        if m.group(1) in vars:
+            resolved.append(vars[m.group(1)] + m.group(2))
+    # Indirect expansion is conservative: only surface paths NAMED like an answer
+    # key (expected_*/truth/golden/answer/ground-truth). Setup scripts also build
+    # the task's INPUT data via os.path.join loops (shards, spool files, reference
+    # registries); synthesizing writes for those turned re-derivation inputs into
+    # bogus "baked truth" FAILs. The kiosk-class leak we need is specifically the
+    # baked expected-output file, which this pattern isolates.
+    ANSWER_NAME = re.compile(r"(^|[_./-])(expected|truth|golden|answer|"
+                             r"ground[_-]?truth)", re.I)
+    resolved = [p for p in resolved if ANSWER_NAME.search(os.path.basename(p))]
+    if mode == "write":
+        return "\n".join(f"open('{p}', 'w')" for p in resolved)
+    return "\n".join(f"open('{p}')" for p in resolved)
 
 
 def _instruction_text(root):
@@ -157,7 +203,10 @@ def _verifier_text(root):
                 ts.append(base64.b64decode(m.group(1)).decode("utf-8", "replace"))
             except Exception:
                 pass
-    return "\n".join(ts)
+    joined = "\n".join(ts)
+    # Resolve variable-built read paths (verifier opens os.path.join(TRUTH,'expected_*'))
+    exp = _expand_indirect_paths(joined, "read")
+    return joined + ("\n" + exp if exp else "")
 
 
 def _dockerfile_copies(root, name):
@@ -174,12 +223,38 @@ def _dockerfile_copies(root, name):
                                       "solution would be readable by the agent.",
                                location="environment/Dockerfile",
                                fix="Remove the COPY; solution/ is oracle-only, mounted at verify time."))
-        elif low.startswith("tests") or "/tests" in low and not low.startswith("test-"):
-            out.append(finding(name, "dockerfile", FAIL, "dockerfile-copies-tests",
-                               detail=f"Dockerfile copies `{src}` — verifier/tests "
-                                      "would be readable by the agent.",
-                               location="environment/Dockerfile",
-                               fix="Remove the COPY; tests/ is mounted at verify time only."))
+        elif (low.startswith("tests") or ("/tests" in low and not low.startswith("test-"))):
+            # The environment Dockerfile's build context is environment/, so
+            # `COPY tests ...` resolves to environment/tests/ — NOT the grading
+            # tests/ (which lives at the task root, outside the build context, and
+            # is injected at /tests only at verify time so it CANNOT be COPY'd here).
+            # Only a real leak if the copied dir actually holds the grader
+            # (test_outputs.py / test.sh); otherwise it's a build fixture the task
+            # intentionally exposes (e.g. a reader_stub contract).
+            env_src = os.path.join(root, "environment", src.lstrip("./"))
+            base = os.path.basename(low)
+            # The copied path itself IS the grader file (e.g. COPY tests/test_outputs.py /app),
+            # OR it is a dir that contains the grader. Either way the agent can read the
+            # verifier. A dir holding only fixtures (no grader) is not a leak.
+            holds_grader = (base in ("test_outputs.py", "test.sh")
+                            or os.path.isfile(os.path.join(env_src, "test_outputs.py"))
+                            or os.path.isfile(os.path.join(env_src, "test.sh")))
+            if holds_grader:
+                out.append(finding(name, "dockerfile", FAIL, "dockerfile-copies-tests",
+                                   detail=f"Dockerfile copies `{src}`, which contains the "
+                                          "grader (test_outputs.py/test.sh) — the verifier "
+                                          "would be readable by the agent.",
+                                   location="environment/Dockerfile",
+                                   fix="Remove the COPY; tests/ is mounted at verify time only."))
+            else:
+                out.append(finding(name, "dockerfile", WARN, "dockerfile-copies-env-tests",
+                                   detail=f"Dockerfile copies `{src}` (environment/{src.lstrip('./')}), "
+                                          "a build fixture dir, not the grading tests/. Confirm it "
+                                          "holds only agent-facing contract/fixture files, no answer key.",
+                                   location="environment/Dockerfile",
+                                   fix="Leave as-is if it is a fixture/contract the task exposes on "
+                                       "purpose; the grading tests/ live at the task root and are not "
+                                       "in this build context."))
         elif HINT_NAMES.search(os.path.basename(low)):
             out.append(finding(name, "dockerfile", WARN, "dockerfile-copies-hint-file",
                                detail=f"Dockerfile copies `{src}`, whose name suggests "
@@ -270,19 +345,29 @@ def _truth_bake(root, name):
     SRC_EXT = (".py", ".go", ".c", ".cc", ".cpp", ".h", ".hpp", ".js", ".ts",
                ".java", ".rs", ".rb", ".sh", ".pl", ".php", ".scala", ".kt")
     INPUT_DIR = re.compile(r"/(incoming|in[-_]?folder|in[-_]?box|inputs?|raw|"
-                           r"fixtures?|samples?|corpus|evidence|data/in|uploads?|"
-                           r"feed)s?/", re.I)
+                           r"fixtures?|samples?|corpus|evidence|data|datasets?|"
+                           r"policy|policies|config|configs|probes?|grids?|"
+                           r"streams?|logs?|journals?|uploads?|feed)s?(?:/|$)", re.I)
+    # Dirs that are by construction NOT the agent's cheat surface for the expected
+    # answer: transient/cache scratch, and verifier/grader-owned scaffolding.
+    CACHE_DIR = re.compile(r"/(\.?cache|caches?|tmp|temp|work|scratch|run|state|"
+                           r"build|dist|out|output)s?(?:/|$)", re.I)
+    VERIFIER_DIR = re.compile(r"/(verifier|grader|checker|judge|harness)s?(?:/|$)", re.I)
+    # mutated_* siblings are a re-derivation / mutated-rerun DEFENSE (the verifier
+    # re-runs on perturbed inputs to defeat hardcoding), not a leaked answer.
+    rederivation = any(os.path.basename(p).lower().startswith(("mutated_", "mutated-"))
+                       or "/mutated" in p.lower() for p in read_hits)
 
     def is_truth_candidate(p):
         if TRUTHY.search(os.path.basename(p)):
             return True
         if p.lower().endswith(SRC_EXT):
             return False
-        if INPUT_DIR.search(p):
+        if INPUT_DIR.search(p) or CACHE_DIR.search(p) or VERIFIER_DIR.search(p):
             return False
         return True
 
-    read_hits = [p for p in read_hits if is_truth_candidate(p)]
+    read_hits = [] if rederivation else [p for p in read_hits if is_truth_candidate(p)]
     truthy = sorted(p for p in baked if TRUTHY.search(os.path.basename(p)))
     if read_hits:
         # FP rule: if every read path is instruction-referenced, it is task INPUT
@@ -299,7 +384,8 @@ def _truth_bake(root, name):
         return [finding(name, "anti_cheat", FAIL, "truth-baked-verifier-reads",
                         detail=f"Verifier reads build-baked agent-visible path(s) "
                                f"{read_hits} as expected truth (not referenced in "
-                               "instruction.md) — likely a real leak.",
+                               "instruction.md, not under an input/cache/verifier dir, "
+                               "no mutated-rerun defense) — likely a real leak.",
                         location="environment/Dockerfile",
                         fix="Move the truth artifact under tests/ (verify-time mount); "
                             "remove the agent-visible bake; re-run oracle.")]
