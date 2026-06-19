@@ -75,10 +75,10 @@ against the eval set.
 | `check_dockerfile` | reproducibility smells: unpinned base image, `apt` without update, unpinned `pip`, `ADD <url>`, `curl\|sh` (all WARN) |
 | `check_instructions` | leftover placeholders (TODO/FIXME/lorem); too-short/empty instruction |
 | `check_leakage` | `solution/` or `tests/` COPY'd into the image; truth baked to an agent-visible path the verifier reads; reference `solve.sh` that reads the answer instead of producing it; hint files |
-| `check_reward_hack` | vacuous/no-assertion/existence-only tests; swallowed assertions; `pytest \|\| true`; unconditional/agent-writable reward; verifier importing the solution; skipped/empty-parametrized scored tests |
+| `check_reward_hack` | vacuous/no-assertion/existence-only tests; swallowed assertions; `pytest \|\| true`; unconditional/agent-writable reward; verifier importing the solution; **agent-writable in-image grader the verifier invokes**; skipped/empty-parametrized scored tests; **`set -e`-aborts-before-reward** |
 | `check_env_fairness` | leftover generators/setup scripts; git-history exposure; verifier hitting the network |
 | `check_portability` | solve/test robustness: backgrounded-daemon-no-redirect, PEP-668 pip, server-not-started, broad `pkill`, systemd/entrypoint assumptions |
-| `check_verifier_defenses` | verifier with no anti-cheat defense (mutated-rerun / recompute / source-grep / re-exec). A PASS `verifier-defended` deterministically suppresses adversary cheat-vectors against it; `verifier-undefended` (WARN) flags a literal-only verifier as gameable |
+| `check_verifier_defenses` | verifier with no anti-cheat defense (mutated-rerun / recompute / source-grep / re-exec). A PASS `verifier-defended` deterministically suppresses adversary cheat-vectors against it; `verifier-undefended` (WARN) flags a literal-only verifier as gameable; **a degenerate in-image integrity guard (`sha256sum -c`/`cmp` vs a baked ref, agent root) no longer counts as a defense** |
 
 ## How to run
 

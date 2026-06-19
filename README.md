@@ -100,7 +100,7 @@ python scripts/run_static_qc.py eval/fixtures --out-dir /tmp/fx
 python scripts/score_qc.py /tmp/fx/review-ssot.csv eval/golden_labels.csv
 ```
 
-**Current results** — `TP=6  FP=0  FN=0  TN=3` → **precision 1.00, recall 1.00**:
+**Current results** — `TP=7  FP=0  FN=0  TN=5` → **precision 1.00, recall 1.00**:
 
 | Fixture | QC verdict | Defect caught |
 |---|---|---|
@@ -113,6 +113,9 @@ python scripts/score_qc.py /tmp/fx/review-ssot.csv eval/golden_labels.csv
 | `fail/copies-solution` | **FAIL** | `dockerfile-copies-solution` |
 | `fail/reference-reads-truth` | **FAIL** | `reference-solve-reads-truth` |
 | `fail/unconditional-reward` | **FAIL** | `unconditional-reward` |
+| `fail/agent-writable-verifier` | **FAIL** | `agent-writable-verifier` (in-image grader the verifier invokes) |
+| `warn/set-e-reward-abort` | **WARN** | `test-sh-set-e-reward-abort` (no-op aborts before reward write) |
+| `warn/degenerate-integrity-guard` | **WARN** | `degenerate-integrity-guard` (baked `sha256sum -c` ref, agent root) |
 
 `eval/golden_labels.csv` also labels real OTS examples — two known-defective tasks (`cloud-cost-anomaly-auditor`, `dra-calibration-integrity-pipeline`, both baked-answer leaks) plus several clean ones. Pull them with the key and score the same way:
 

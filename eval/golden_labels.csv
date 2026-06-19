@@ -8,6 +8,9 @@ truth-baked,1,FAIL,truth-baked-verifier-reads,fixture,synthetic,answer baked to 
 copies-solution,1,FAIL,dockerfile-copies-solution,fixture,synthetic,Dockerfile COPY solution/ into image
 reference-reads-truth,1,FAIL,reference-solve-reads-truth,fixture,synthetic,solve.sh cp /opt/expected_output.csv (the verifier's expected) — report Pattern 4
 unconditional-reward,1,FAIL,unconditional-reward,fixture,synthetic,test.sh writes reward=1 ungated; pytest swallowed with || true
+agent-writable-verifier,1,FAIL,agent-writable-verifier,fixture,synthetic,Dockerfile COPYs verify.py into /app and test.sh invokes it to grade — agent can overwrite the grader
+degenerate-integrity-guard,0,WARN,degenerate-integrity-guard,fixture,synthetic,verifier sha256sum -c against an in-image baked hash while agent is root — decorative guard; must flag WARN + verifier-undefended (NOT count as a real defense), not FAIL
+set-e-reward-abort,0,WARN,test-sh-set-e-reward-abort,fixture,synthetic,test.sh under set -e with no set +e around pytest — no-op aborts before reward=0 write; WARN-level harness bug
 cloud-cost-anomaly-auditor,1,FAIL,truth-baked-verifier-reads,ots,our-validation,/hidden/*.truth.json baked + read by verifier (pull with RLS_KEY)
 dra-calibration-integrity-pipeline,1,FAIL,truth-baked-verifier-reads,ots,our-validation,/opt/valid_initial_count.txt baked + read; also leftover mutate_caches.py (pull with RLS_KEY)
 telemetry-command-bus,0,WARN,,ots,second5k-remediated,truth now under /tests/.truth/ (report leak fixed) — good example

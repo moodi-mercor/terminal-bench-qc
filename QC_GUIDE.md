@@ -68,8 +68,11 @@ survives the build and is exploitable before treating it as a real defect. Drive
 **Metadata** (`check_metadata.py`): `task.toml` has difficulty / category / tags /
 expert+junior time / verifier+agent timeouts / env resources; category is
 specific (not "programming"); tags specific (not "general"); `junior_time ≥
-expert_time > 0`; time estimates within the difficulty's range (watch the
-seconds-mistaken-for-minutes smell: values ~60× too high); `agent_timeout ≥
+expert_time > 0`; time estimates within the difficulty's range (TB2 reference
+bands, in **minutes** — `expert` / `junior`: **easy** 5–60 / 20–120, **medium**
+5–180 / 10–480, **hard** 300–480 / 600–19200); watch the seconds-mistaken-for-minutes
+smell (values ~60× too high ⇒ likely recorded in seconds; if a whole batch is 60×
+high, flag the *pattern*, not each task); `agent_timeout ≥
 verifier_timeout`; resources within client caps (~1 CPU / 4 GB); and
 **internet-flag-contradiction** — `allow_internet=false` while the instruction tells
 the agent to download/fetch from the network (likely unrunnable offline).
@@ -104,8 +107,20 @@ reward-hacking — tests that pass without the work, and gameable pass signals:
   the agent could write.
 - **Test imports the solution** — `tests/` does `from solution import …` / `import
   solve`: the verifier can grade against the oracle's own output, not the agent's. FAIL.
+- **Agent-writable verifier** (`agent-writable-verifier`, FAIL) — the Dockerfile
+  COPYs a grading script (`verify.py` / `grader.sh` / `check.py` …) into an
+  agent-visible path and `tests/` *invokes* it to grade. Because the agent (root, no
+  `USER` drop) can overwrite that script with one that prints `SUCCESS`, the verifier
+  is trivially defeated. The grader must live under `tests/` (verify-time read-only
+  mount), never in agent-writable space. *(Reference's "most common anti-cheat hole";
+  real example caught: a task running `python3 /root/verify_logic.py` from `tests/`.)*
 - **Skipped/empty scored test** — a test decorated `skip`/`skipif`/`xfail`, or
   `@parametrize(..., [])` over an empty list: it silently never runs. WARN.
+- **`set -e` reward abort** (`test-sh-set-e-reward-abort`, WARN) — `test.sh` runs
+  under `set -e` with no `set +e` around the verifier, then branches on its exit
+  code to write the reward. On a failing run `set -e` aborts *before* the `reward=0`
+  write, so a no-op produces no reward file instead of 0.0 (breaks no-op grounding).
+  Fix: bracket the verifier in `set +e` … `set -e`, or capture `rc=$?` immediately.
 These are candidates; a no-op run confirms them. (Subtle gameable logic that only
 fires at runtime is *not* statically decidable — that's the delivery-stage gate.)
 
@@ -121,6 +136,15 @@ reads its output). `verifier-defended` (PASS) ⇒ cheat-vector candidates agains
 **suppressed** in `aggregate.py` (provably can't work). `verifier-undefended` (WARN) ⇒
 no defense found; a cheat-vector here is credible. On eval this deterministically
 killed 31→9 of the adversary's flags (81% of its false alarms) with no agent in the loop.
+
+  **Degenerate integrity guards** (`degenerate-integrity-guard`, WARN): a shell
+  `sha256sum -c` / `md5sum -c` / `cmp` against an **in-image baked reference**
+  (e.g. a `.sha256` or `.orig` backup) is *not* a real recompute defense when the
+  agent runs as **root** (no `USER` drop) — the agent overwrites both the file and
+  its reference. When this is the only "recompute" signal, it is dropped (the
+  verifier reads as `verifier-undefended`). It counts as a real defense only if the
+  reference lives under `tests/` (verify-time mount) or is a literal in
+  `test_outputs.py`. (Verify-time scratch under `/tmp` is excluded — not baked.)
 
 **Environment fairness** (`check_env_fairness.py`): the statically-decidable half
 of "task fairness" — confirm the agent's starting context is only the intended
@@ -184,7 +208,10 @@ agent-visible environment.
   the agent can see. Example: test expects `version == "2.4.1"` but no file,
   config, or instruction line mentions `2.4.1`. Before flagging: grep
   `environment/`, source, configs, schema, seed data, error strings — if the value
-  appears anywhere agent-visible it is *discoverable*, not phantom.
+  appears anywhere agent-visible it is *discoverable*, not phantom. **"Agent-visible"
+  means COPY'd into the image by `environment/Dockerfile`, not merely present in the
+  task tree** — a value found *only* in `solution/` or `tests/` is phantom (those are
+  oracle/verify-time-only), and that is the most-missed phantom.
 - **Brittle test / false-reject** (`brittle-string-match`, FAIL) — asserts *how*
   the code is built, not *what* it produces. Litmus test: **construct a correct
   solution this check would wrongly fail.** If you can, it's brittle. Examples:
@@ -284,6 +311,18 @@ FAIL for tasks that are genuinely contrived, not merely concise.
    requires finding *all* of a known set.
 5. **The one canonical approach** named in an instruction/test is stating the
    answer's shape, not over-constraining, when there's genuinely one right way.
+6. **Grep for the file before calling it "missing."** A file a test references is
+   often COPY'd into the image by the Dockerfile — confirm it's absent from both the
+   build *and* the task tree before flagging a missing input/requirement.
+7. **Read the actual grep pattern before calling it fragile.** A source grep that
+   already includes the alternatives (e.g. `(-S|--buffer-size)`, `re.search(...)`)
+   accepts the valid variants — it is not a brittle exact-match.
+8. **Exhaustive-search tasks: a hardcoded set is ground truth.** When the task is
+   "find *all* X in a fixed, baked input," a literal list of expected paths/values
+   is the correct answer key, not over-constraint (pairs with rule 4).
+9. **Map each test fn to a requirement before calling coverage "minimal."** A small
+   test count can still cover every requirement — enumerate the mapping first;
+   only flag a requirement that genuinely has no corresponding assertion.
 
 ### Ready-to-run reviewer sub-agent prompt
 
@@ -363,9 +402,14 @@ tested on new tasks; do not thin it out.
 >
 > Before flagging anything in (A), apply the **false-positive rules**: an
 > anti-shortcut grep *alongside* an outcome test is PASS not WARN; discoverable
-> values aren't phantom; instruction-referenced inputs aren't leaks; deterministic
-> baked ground truth is fine; the one genuinely-canonical approach isn't
-> over-constraining.
+> values aren't phantom (and "discoverable" = COPY'd into the image, NOT merely
+> present in `solution/`/`tests/` — a value only in those is phantom); instruction-
+> referenced inputs aren't leaks; deterministic baked ground truth is fine, and a
+> hardcoded set is the answer key for a find-*all* task; the one genuinely-canonical
+> approach isn't over-constraining; grep for a file before calling it "missing"
+> (it may be COPY'd in); read the actual grep pattern before calling it fragile (it
+> may already include the alternatives); and map each test fn to a requirement
+> before calling coverage "minimal."
 >
 > **These three questions are MANDATORY — answer each explicitly, with evidence,
 > before you conclude. They target the defect classes reading-based review misses
@@ -441,6 +485,12 @@ pass surfaces the candidate pre-run.
 - **Tamper with the scoring path** — overwrite/monkeypatch the verifier or its
   helpers, write the reward/score file, or force the exit code (pairs with Part 1's
   `agent-writable-reward-signal` / `unconditional-reward`).
+- **Overwrite an in-image grader/reference** — if a grading script (`verify.py`,
+  `grader.sh`) or an integrity reference (`.orig` backup, `.sha256`) lives in
+  agent-writable space and the verifier invokes/compares against it, replace it with
+  one that always passes (pairs with Part 1's `agent-writable-verifier` /
+  `degenerate-integrity-guard`). Only viable when the agent is root and the file is
+  NOT under `tests/`.
 - **Echo leaked ground truth** — read the answer from any agent-visible location (a
   baked answer file, a generator script) and print it.
 
@@ -476,8 +526,10 @@ PASS `cheat-vector-ok`.
 >
 > Work through the hack classes: hardcode checked literals, write the inspected
 > artifact directly, stub the called surface, exploit weak assertions, detect the
-> harness and branch, tamper with the scoring path, echo any leaked ground truth.
-> For each, decide concretely whether it would PASS `tests/`.
+> harness and branch, tamper with the scoring path, overwrite any in-image
+> grader/reference the verifier invokes (when you are root and it is not under
+> `tests/`), echo any leaked ground truth. For each, decide concretely whether it
+> would PASS `tests/`.
 >
 > **Before you claim a hack, rule out the verifier's defenses — most verifiers have
 > them, and a hack that any of these defeats is NOT viable:**
@@ -576,5 +628,6 @@ Use these exact titles so the histogram groups cleanly:
 `test-imports-solution`, `skipped-scored-test`, `empty-parametrize`,
 `instruction-placeholder`, `instruction-too-short`, `instruction-empty`,
 `dockerfile-entrypoint`, `test-deps-in-image`, `secret-baked-in-image`,
-`verifier-defended`, `verifier-undefended`. Append `*-ok`
+`verifier-defended`, `verifier-undefended`, `agent-writable-verifier`,
+`degenerate-integrity-guard`, `test-sh-set-e-reward-abort`. Append `*-ok`
 (e.g. `tests-ok`) for clean PASS findings.

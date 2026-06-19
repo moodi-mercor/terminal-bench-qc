@@ -26,6 +26,13 @@ Emits one finding per task (area="tests"): `verifier-defended` (PASS) listing th
 defenses, or `verifier-undefended` (WARN) — a verifier with none of these and only
 literal comparisons is genuinely gameable, and a cheat-vector on it is credible.
 
+A shell integrity guard (`sha256sum -c` / `md5sum -c` / `cmp`) against an in-image
+baked reference is NOT a real defense when the agent runs as root (no USER drop):
+the agent overwrites both the file and its reference. Such a `degenerate-integrity-guard`
+(WARN) does not count as `recompute-or-hash`; it counts only if the reference lives
+under tests/ (verify-time mount), is a literal in test_outputs.py, or the agent
+drops privileges. (Verify-time scratch under /tmp is excluded.)
+
 Usage:
     python check_verifier_defenses.py <tasks-dir> [--out findings_verifier_defenses.json]
 """
@@ -56,6 +63,17 @@ RE_EXEC = re.compile(r"(?:subprocess\.(?:run|check_output|check_call|call|Popen)
 DEFENSES = [("mutated-rerun", MUTATED), ("recompute-or-hash", RECOMPUTE),
             ("source-grep-guard", SRC_GREP), ("re-exec-agent", RE_EXEC)]
 
+# A shell integrity guard (`sha256sum -c`, `md5sum -c`, `cmp`). When it compares
+# against an *in-image baked* reference and the agent runs as root, it is decorative
+# — the agent overwrites both the file and its reference. (Bare `diff` is excluded:
+# it is overwhelmingly a legitimate output comparison, often over verify-time scratch.)
+SHELL_INTEGRITY = re.compile(r"\b(?:sha\d*sum|md5sum)\s+-c\b|\bcmp\s+\S", re.I)
+# a genuine (non-degenerate) recompute: Python derives the expected value itself.
+REAL_RECOMPUTE = re.compile(r"(hashlib|hmac|blake2|recompute\w*|recalculat\w*|Counter\s*\(|"
+                            r"expected\s*=\s*(?:sum|len|sorted|max|min)\s*\()", re.I)
+# a non-root USER directive means the agent cannot overwrite the baked reference.
+USER_DROP = re.compile(r"^\s*USER\s+(?!root\b)\S", re.M | re.I)
+
 
 def _verifier_text(root):
     parts = [read_text(task_paths(root)["test.sh"]),
@@ -73,19 +91,41 @@ def check_task(name, root):
         return [finding(name, "tests", PASS, "verifier-defenses-unknown",
                         detail="no verifier text found to analyse.")]
     found = [label for label, rx in DEFENSES if rx.search(txt)]
+    extra = []
+    # Degenerate integrity guard: a shell `cmp`/`sha*sum -c` against an in-image
+    # baked reference is decorative when the agent is root. If it's the ONLY thing
+    # making the verifier look "recompute"-defended, drop that — the verifier is
+    # actually gameable.
+    guard_line = next((ln for ln in txt.splitlines() if SHELL_INTEGRITY.search(ln)), None)
+    agent_is_root = not USER_DROP.search(read_text(task_paths(root)["Dockerfile"]))
+    # only degenerate when the reference is an in-image baked file: exclude verify-time
+    # scratch (/tmp) and the read-only verify-time mount (tests/ / .truth).
+    if (guard_line and agent_is_root and "tests/" not in guard_line
+            and ".truth" not in guard_line and "/tmp" not in guard_line
+            and not REAL_RECOMPUTE.search(txt)):
+        extra.append(finding(name, "tests", WARN, "degenerate-integrity-guard",
+                             detail=f"`{guard_line.strip()}` compares against an in-image baked "
+                                    "reference while the agent runs as root (no USER drop) — the "
+                                    "agent overwrites both the file and its reference, so the "
+                                    "guard is decorative, not a real anti-cheat defense.",
+                             location="tests/",
+                             fix="Keep the reference under tests/ (verify-time mount) or as a "
+                                 "literal in test_outputs.py, or drop privileges with USER."))
+        if "recompute-or-hash" in found:
+            found.remove("recompute-or-hash")
     if found:
         return [finding(name, "tests", PASS, "verifier-defended",
                         detail=f"verifier has anti-cheat defense(s): {found} — resists "
                                "hardcode / fake-artifact cheats; cheat-vector candidates "
                                "against it are suppressed.",
-                        location="tests/")]
+                        location="tests/")] + extra
     return [finding(name, "tests", WARN, "verifier-undefended",
                     detail="verifier shows no mutated-rerun / recompute / source-grep / "
                            "re-execution defense — if it compares only against baked "
                            "literals it is genuinely gameable; a cheat-vector here is credible.",
                     location="tests/",
                     fix="Add a mutated/held-out rerun, recompute the expected value, or "
-                        "grep the agent's source for hardcoded answers.")]
+                        "grep the agent's source for hardcoded answers.")] + extra
 
 
 def main():
