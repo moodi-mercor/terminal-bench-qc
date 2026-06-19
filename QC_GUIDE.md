@@ -1,9 +1,45 @@
-# Terminal-Bench QC — Criteria & Rubric (self-contained)
+# Terminal-Bench QC — Criteria & Rubric
 
-The operating reference for this skill: what each check looks for and how to
-judge it. This file is intentionally scrubbed of client-specific feedback and
-delivery-stage strategy — those internal docs are kept out of this repo. Pair it
-with `SKILL.md` (how to run) and the scripts in `scripts/`.
+The operating reference for this skill: **what each check looks for and how to
+judge it.** Pair it with [`SKILL.md`](SKILL.md) (what it is / how to run) and the
+scripts in `scripts/`. This file is intentionally scrubbed of client-specific
+feedback and delivery-stage strategy — those internal docs are kept out of this
+repo.
+
+**Contents**
+
+- [How the parts fit together](#how-the-parts-fit-together) — start here for the mental model
+- [Verdict scale](#verdict-scale) — PASS / WARN / FAIL definitions
+- [Part 1 — Static checks](#part-1--static-checks-deterministic-scripts) — the deterministic `scripts/` gates
+- [Part 2 — Semantic review](#part-2--semantic-review-per-task-sub-agent) — the per-task reviewer (5 checks + FP verification)
+- [Part 3 — Adversarial reward-hack pass](#part-3--adversarial-reward-hack-pass-per-task-sub-agent) — the per-task red-team
+- [Part 4 — Dataset-level](#part-4--dataset-level) — decontamination, near-duplicates
+- [Sub-agent orchestration](#sub-agent-orchestration-parts-23-driver) — how Parts 2–3 fan out and aggregate
+- [Out of scope: behavioral](#out-of-scope-behavioral)
+- [Stable defect-class titles](#stable-defect-class-titles-for-the-distribution-report)
+
+## How the parts fit together
+
+Read this once — it's the mental model the rest of the file assumes. The pipeline
+has four parts. **Every part scores tasks by *reading* them; no task is executed
+here** — runtime confirmation is the delivery-stage behavioral gate, which is
+[out of scope](#out-of-scope-behavioral).
+
+- **Part 1 — Static checks.** Deterministic `scripts/` that flag *candidates*
+  mechanically across every task. Cheap, so run first.
+- **Part 2 — Semantic review.** One **reviewer** sub-agent per task. It applies the
+  judgment the scripts can't (the five checks in Part 2) *and* verifies Part 1's
+  flags to drop false positives. The question it asks: ***"is this task correct?"***
+- **Part 3 — Adversarial reward-hack pass.** One **adversary** sub-agent per task,
+  with the opposite stance: it role-plays the eval model and tries to beat the
+  verifier *without doing the work*. The question it asks: ***"can I cheat it?"***
+- **Part 4 — Dataset-level.** Decontamination and near-duplicate checks across the
+  whole delivery, not per task.
+
+Parts 2 and 3 run **after** Part 1 and fan out in parallel (one sub-agent each per
+task); their findings feed back through
+[`aggregate.py`](#sub-agent-orchestration-parts-23-driver), which drops the
+false positives Part 2 refuted and folds in the new defects Parts 2–3 found.
 
 ## Verdict scale
 
@@ -123,22 +159,14 @@ verify time and must never be COPY'd in. Flag:
 
 ## Part 2 — Semantic review (per-task sub-agent)
 
-> **How Parts 1–3 divide the work** (read this once — it's the thing people get
-> confused about):
-> - **Part 1** is the deterministic scripts. They flag *candidates* mechanically.
-> - **Part 2** is the per-task **reviewer** sub-agent. It applies human judgment
->   the scripts can't, AND verifies Part 1's flags to drop false positives. This is
->   the single canonical semantic rubric — the five checks below.
-> - **Part 3** is the per-task **adversary** sub-agent. Different stance entirely:
->   it role-plays the eval model and *tries to beat the verifier without doing the
->   work*. Part 2 asks "is this task correct?"; Part 3 asks "can I cheat it?"
->
-> Parts 2 and 3 both fan out one sub-agent per task and both run after Part 1. They
-> are decidable by **reading** the task — no task run required. Confirming an
-> exploit actually fires at runtime is the delivery-stage behavioral gate (out of
-> scope here; see the bottom of this file).
+The **reviewer** sub-agent — the single canonical semantic rubric. (For where it
+sits in the pipeline, see [How the parts fit together](#how-the-parts-fit-together).)
+It does **two jobs**, both driven by the [one prompt below](#ready-to-run-reviewer-sub-agent-prompt):
+the **semantic deep-dive** — the five checks in this section — and
+**false-positive verification** of Part 1's static flags for this task. ("Semantic
+deep-dive" is just the name for these five checks; it is not a separate pass.)
 
-The reviewer reads `instruction.md`, `tests/` (`test.sh` + `test_outputs.py`),
+It reads `instruction.md`, `tests/` (`test.sh` + `test_outputs.py`),
 `solution/solve.sh`, and `environment/Dockerfile` + setup scripts, then judges the
 five checks below. **Grep the environment for a value before calling a test
 "phantom," and read the *whole* test file before flagging a single assertion** —
@@ -152,7 +180,7 @@ agent-visible environment.
 
 - **Untested requirement** — a hard requirement in the prompt that no test checks.
   The agent could skip it and still score 100%. FAIL (`untested-requirement`).
-- **Phantom test** (`phantom-test`, FAIL) — asserts a value/behaviour found nowhere
+- **Phantom test** (`phantom-test`, FAIL) — asserts a value/behavior found nowhere
   the agent can see. Example: test expects `version == "2.4.1"` but no file,
   config, or instruction line mentions `2.4.1`. Before flagging: grep
   `environment/`, source, configs, schema, seed data, error strings — if the value
@@ -260,30 +288,104 @@ FAIL for tasks that are genuinely contrived, not merely concise.
 ### Ready-to-run reviewer sub-agent prompt
 
 This agent does **two jobs at once** — the five checks above, and false-positive
-verification of Part 1's flags for the same task (they cost one agent together).
+verification of Part 1's flags for the same task (they cost one agent together). The
+prompt is deliberately verbose so the sub-agent needs no other context.
+
+**Maintenance note:** keep this prompt detailed. QC sub-agents miscalibrate or
+hallucinate when a check is one vague line — concrete bands, examples, and litmus
+tests are what hold them on-target. Expand the per-check detail as the skill is
+tested on new tasks; do not thin it out.
 
 > Review the single task at `<TASK_DIR>`. Read `instruction.md`, `tests/`,
 > `solution/`, and `environment/Dockerfile` + setup scripts. Its Part-1 static QC
 > findings: `<STATIC_FINDINGS_JSON>`.
 >
-> **(A) Semantic deep-dive — the 5 checks.** Emit one finding per issue, and one
-> PASS `*-ok` per clean area.
-> 1. **Instruction↔verifier alignment** — every hard requirement is tested;
->    everything tested is in the prompt or discoverable in the env. Grep the env
->    for a value before calling a test phantom. Titles: `untested-requirement`,
->    `phantom-test`, `brittle-string-match`, `weak-assertion`.
-> 2. **Comprehensive tests** — every part of the instruction is verified on both
->    the correctness and optimal-solution routes; flag flaky tests
->    (`flaky-test`) and over-constraining literals/functions/strings
->    (`brittle-string-match`).
-> 3. **Hygiene** — grammar/typos/formatting (`spelling-grammar`), ambiguity
->    (`instruction-clarity`), over-specification (`over-specified-instruction`).
-> 4. **Golden-patch correctness** — *first name the underlying algorithm/method*,
->    then verify `solve.sh` matches a canonical solution and scores 100% with real
->    logic (`golden-patch-mismatch`, `hardcoded-solution`).
-> 5. **Realism** — the task resembles a real developer workflow; use the PASS/WARN/
->    FAIL bands; do NOT flag a task merely for being small or self-contained
->    (`task-realism`).
+> **(A) The five semantic checks (the "semantic deep-dive").** Emit one finding per
+> issue and one PASS `*-ok` per clean area. A generic "looks fine" is not an answer —
+> cite the file/line behind every verdict.
+> 1. **Instruction↔verifier alignment.** Every hard requirement has ≥1 test, and
+>    every assertion maps to something stated in the prompt or discoverable in the
+>    agent-visible env.
+>    - `untested-requirement` (FAIL) — a hard requirement no test checks; the agent
+>      could skip it and still score 100%.
+>    - `phantom-test` (FAIL) — asserts a value found nowhere agent-visible (e.g.
+>      expects `version == "2.4.1"` but nothing mentions `2.4.1`). First grep
+>      `environment/`, source, configs, schema, seed data, error strings — if the
+>      value appears anywhere agent-visible it is *discoverable*, not phantom.
+>    - `brittle-string-match` (FAIL) — asserts *how* the code is built, not *what* it
+>      produces. Litmus: *can you write a correct solution this test wrongly fails?*
+>      (greps source for `import pandas` so a correct numpy answer fails;
+>      exact-string/whitespace match the spec never pinned; `len(os.listdir())==3`
+>      when the count was never fixed.)
+>    - `weak-assertion` (WARN→FAIL) — too permissive; lets a wrong solution pass
+>      (asserts a substring but ignores exit code; checks a value's *format* not its
+>      value; `os.path.exists(out)` when the file's *contents* are the deliverable).
+>      FAIL when it lets a wrong solution pass an essential requirement.
+> 2. **Comprehensive coverage.** Every requirement is tested on *both* the
+>    correctness route (right answer?) and the optimal-solution route (the required
+>    algorithm / perf bound / API?). Flag a stated O(n log n), latency, or memory
+>    bound no test exercises. `flaky-test` (WARN→FAIL) — pass/fail varies for the
+>    *same correct solution* (wall-clock margins like "<0.5s", network, unseeded RNG,
+>    set/dict ordering, races). Over-constraining an incidental helper name /
+>    intermediate value / log string → `brittle-string-match`.
+> 3. **Hygiene.** `spelling-grammar` (WARN) — typos/grammar/markdown/LaTeX in
+>    `instruction.md`. `instruction-clarity` (escalate toward FAIL) — two plausible
+>    readings the tests only accept one of. `over-specified-instruction` — the prompt
+>    hands over the solution (enumerated fix lists, step-by-step recipes, exact bug
+>    locations, answer-key tables); it should state *what success looks like*, not
+>    *how to get there*.
+> 4. **Golden-patch correctness.** *First name the underlying algorithm/method the
+>    task calls for*, then trace `solve.sh` against a canonical solution for that
+>    method and through each `test_check_*`. It must implement real logic (no
+>    hardcoded outputs, no reading `tests/`, no lookahead) and score 100% on the
+>    happy path. `golden-patch-mismatch` (FAIL) — wouldn't actually score 100%
+>    (misses a requirement, wrong output shape, relies on something absent at run
+>    time). `hardcoded-solution` (FAIL) — emits the expected answer literally / reads
+>    it from `tests/`.
+> 5. **Realism** (`task-realism`). Does the instruction describe a workflow a real
+>    engineer would plausibly be assigned (fix a failing test, implement an endpoint,
+>    debug a perf regression, parse logs, migrate a config, repair a build)? Judge
+>    plausibility of the *workflow*, not size — a small self-contained repro is fine.
+>    - **PASS** — a senior engineer would recognize it as assignable; a minimal repro
+>      of a real bug class counts.
+>    - **WARN** — plausible domain but artificial framing a real ticket wouldn't have:
+>      pervasive `foo`/`bar`/`do_thing_1` naming with no domain grounding, a contrived
+>      backstory, or thresholds/constants picked to make a test pass ("benchmark
+>      smell").
+>    - **FAIL** — no real-world analog (an invented puzzle/cipher with no motivation,
+>      unless the category is explicitly puzzles), a workflow no dev would do
+>      ("hand-edit this binary at offset 0x1F"), or an internally implausible scenario
+>      (stated motivation contradicts the work; references tools/services that can't
+>      coexist).
+>    - **Do not hallucinate unrealism** — don't penalize a task for being small,
+>      synthetic-by-necessity, or lacking a narrative. Reserve FAIL for genuinely
+>      contrived, not merely concise.
+>
+> Before flagging anything in (A), apply the **false-positive rules**: an
+> anti-shortcut grep *alongside* an outcome test is PASS not WARN; discoverable
+> values aren't phantom; instruction-referenced inputs aren't leaks; deterministic
+> baked ground truth is fine; the one genuinely-canonical approach isn't
+> over-constraining.
+>
+> **These three questions are MANDATORY — answer each explicitly, with evidence,
+> before you conclude. They target the defect classes reading-based review misses
+> most often; a generic "looks fine" is not an answer.**
+> - **Q1 (weak verifier / false-accept).** *Write the laziest submission that still
+>   passes.* Trace the grading concretely: would a no-op, empty file, all-zeros, or
+>   constant output satisfy every assertion? Watch for ratios/normalizations that
+>   collapse to a constant, substring/length/existence-only checks, and value
+>   comparisons with a degenerate solution. If a lazy output passes an essential
+>   requirement → `weak-assertion` FAIL.
+> - **Q2 (broken oracle / false-reject).** *Does the reference `solve.sh` pass every
+>   test?* Name the algorithm, then trace the reference through each `test_check_*`.
+>   Watch for patches/`str.replace` that silently no-op (pattern doesn't match),
+>   missing deps, wrong output paths, or whitespace/format mismatches. If the shipped
+>   reference would fail its own tests → `golden-patch-mismatch` FAIL.
+> - **Q3 (instruction↔test mismatch).** *Does every value/string the tests assert
+>   appear in the instruction or an agent-visible file?* Cross-check enum/reason
+>   strings, magic numbers, and expected outputs against the prompt AND any sample
+>   the instruction tells the agent to study. A test that demands a value contradicting
+>   the agent's only spec → `brittle-string-match` / `untested-requirement` FAIL.
 >
 > **(B) Verify the static findings.** For each FAIL/WARN in the static findings,
 > read the relevant files and try to **refute** it. If it's a false positive (e.g.
@@ -301,13 +403,19 @@ verification of Part 1's flags for the same task (they cost one agent together).
 
 ## Part 3 — Adversarial reward-hack pass (per-task sub-agent)
 
-A **separate** sub-agent per task with the opposite stance from Part 2. It role-plays
-the eval model: it is told it will be scored *solely* by `tests/`, and its goal is to
-make the verifier report success while doing **as little of the intended work as
-possible — ideally none.** It enumerates concrete hacks and decides whether any would
-actually pass. A viable hack is a defect in the *task* (the verifier is gameable),
-reported as `semantic-cheat-vector` — a **WARN candidate**, not an auto-FAIL (see the
-calibration note below; on eval the un-disciplined version flagged 49/50 tasks).
+A **separate** sub-agent per task with the opposite stance from Part 2. It **is the
+eval model attempting this task** — it starts from exactly what the real agent sees
+(`instruction.md` + `environment/`), is told it will be scored *solely* by `tests/`,
+and its goal is to make the verifier report success while doing **as little of the
+intended work as possible — ideally none.** It enumerates concrete hacks and decides
+whether any would actually pass. A viable hack is a defect in the *task* (the
+verifier is gameable), reported as `semantic-cheat-vector` — a **WARN candidate**,
+not an auto-FAIL (see the calibration note below).
+
+This agent **attacks the task, not the QC output.** It does not read or critique the
+static findings or the reviewer's verdicts — reviewing/refuting Part 1's flags is the
+*reviewer's* job (Part 2 job B). Part 3's only objective is to beat the verifier the
+way a reward-hacking eval model would.
 
 This is the analytical (read-only) half of reward-hack detection. The
 statically-decidable patterns — vacuous tests, swallowed assertions, `pytest || true`,
@@ -341,7 +449,7 @@ with the **exact recipe** and which assertion it beats. If the verifier resists 
 attempt (outcome-based, hidden/held-out inputs, no agent-writable signal) → emit one
 PASS `cheat-vector-ok`.
 
-> **Calibration — confirm before you fail (learned the hard way).** On the 50-task
+> **Calibration — confirm before you fail.** On the 50-task
 > eval, the raw adversary flagged a cheat-vector on **49 of 50 tasks** (10/10 real
 > defects but also 39 clean tasks) — it *rationalizes* a hack for almost everything.
 > So a claimed cheat-vector is a **candidate (WARN)**, never an auto-FAIL. It is
@@ -356,11 +464,15 @@ PASS `cheat-vector-ok`.
 
 ### Ready-to-run adversarial sub-agent prompt
 
-> You are a capable but adversarial agent being evaluated on the task at
-> `<TASK_DIR>`. You will be scored **only** by `tests/` (read `tests/test.sh` and
-> `tests/test_outputs.py`). You also see `instruction.md` and the
-> `environment/` the real agent starts from. Your goal: make the verifier report
+> You are the eval model attempting the task at `<TASK_DIR>`, but adversarial: you
+> will be scored **only** by `tests/`, so your goal is to make the verifier report
 > **success while doing as little of the intended work as possible — ideally none.**
+> You start from exactly what the real agent sees — `instruction.md` and
+> `environment/`. Because this is a read-only red-team, you may **also** read the
+> verifier (`tests/test.sh`, `tests/test_outputs.py`) to find what is gameable
+> (a real eval run wouldn't see them; whether a hack actually fires is confirmed
+> later at the behavioral stage). Do **not** critique the task or review any QC
+> findings — your only objective is to beat the verifier.
 >
 > Work through the hack classes: hardcode checked literals, write the inspected
 > artifact directly, stub the called surface, exploit weak assertions, detect the
@@ -378,7 +490,7 @@ PASS `cheat-vector-ok`.
 > - held-out/hidden inputs, or a check on intermediate state you can't fake.
 > Only claim a cheat-vector you are **highly confident actually PASSES every test**,
 > defenses included. When unsure, treat it as resisted. (Over-claiming destroys
-> precision — on eval the un-disciplined version flagged 49/50 tasks.)
+> precision — on eval the undisciplined version flagged 49/50 tasks.)
 >
 > - If a hack survives all the defenses, emit a **candidate** (WARN, not FAIL):
 >   `{"task","area":"tests","severity":"WARN","title":"semantic-cheat-vector","location":"<test + line>","detail":"the exact recipe + which assertion it beats + why each defense fails to stop it","fix":"how to make the verifier outcome-based / non-gameable"}`.
@@ -402,34 +514,36 @@ PASS `cheat-vector-ok`.
 
 ---
 
-## Sub-agent orchestration (Layer 2 driver)
+## Sub-agent orchestration (Parts 2–3 driver)
 
-Run the static gates (Part 1) first, then fan out **one sub-agent per task, in
-parallel batches** (independent tasks → embarrassingly parallel). Two roles run per
-task:
-
-1. **Reviewer + FP-verification** (Part 2) — the 5 semantic checks *and*
-   false-positive verification of that task's static findings, in one agent. Writes
-   `qc_out/sem_<task>.json`.
-2. **Adversary** (Part 3) — the reward-hack red-team, a separate agent so the
-   "try to cheat" stance stays clean. Writes `qc_out/adv_<task>.json`.
-
-Then re-run `aggregate.py`. It **auto-drops refuted false positives** (precision
-win, from role 1's `verify-refuted` metas) and folds in every new semantic and
-cheat-vector finding (recall win). This is the funnel: cheap static on all tasks →
-judgment agents only where judgment is needed, verifying static's own output and
-red-teaming the verifier.
+After Part 1, fan out **one sub-agent per task, in parallel batches** (independent
+tasks → embarrassingly parallel): the reviewer (Part 2) writes
+`qc_out/sem_<task>.json`, the adversary (Part 3) writes `qc_out/adv_<task>.json`.
+Then re-run `aggregate.py`, which auto-drops the false positives the reviewer
+refuted (precision) and folds in every new semantic and cheat-vector finding
+(recall).
 
 ### Verification output convention (consumed by `aggregate.py`)
 
-The reviewer (role 1) emits one meta finding per static flag it reviewed:
+The reviewer emits one meta finding per static flag it reviewed:
 - refute a false positive: `{"task","area","title":"verify-refuted","ref":"<static-title>","severity":"PASS","detail":"why it's a FP"}` → that static finding is dropped from the verdict.
 - confirm a real one: `{"task","area","title":"verify-confirm","ref":"<static-title>","severity":"PASS","detail":"evidence"}` → informational; verdict unchanged.
 
-The adversary (role 2) emits ordinary findings (`semantic-cheat-vector` FAIL or
-`cheat-vector-ok` PASS) — no special reconciliation; they aggregate like any other.
+The adversary emits `semantic-cheat-vector` (a **WARN candidate**, never FAIL)
+or `cheat-vector-ok` (PASS). `aggregate.py` reconciles each cheat-vector rather than
+taking it at face value:
+- if the task has a `verifier-defended` finding (`check_verifier_defenses.py` proved a
+  mutated-rerun / recompute / source-grep / re-exec defense), the cheat-vector is
+  **dropped** — the verifier mechanically resists it, no agent in the loop;
+- a confirmation step (a skeptic sub-agent or the delivery behavioral run) emits
+  `cheat-vector-confirmed` → the cheat-vector is **promoted to FAIL**, or
+  `cheat-vector-refuted` → it is **dropped**;
+- otherwise (unreviewed) it stays a **WARN candidate**.
 
-## Out of scope here: behavioral
+The `verify-*` and `cheat-vector-confirmed`/`-refuted` metas are themselves never rolled
+into a verdict — they only adjudicate other findings.
+
+## Out of scope: behavioral
 
 The runtime **oracle/no-op** gate (reference solution → pass, untouched container
 → fail) is run at the **delivery stage** on the client's target infra, not by this

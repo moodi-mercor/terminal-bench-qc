@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """Run every deterministic (static) QC gate over a tasks tree and aggregate.
 
-This is the one-command entry point for Layers 0-1. It runs the structure,
-metadata, leakage, reward-hack, and env-fairness detectors, writes their findings
-JSON into an output directory, then produces the SSOT + defect-distribution reports.
+This is the one-command entry point for Layers 0-1. It runs all nine static gates
+(structure, metadata, leakage, reward-hack, env-fairness, portability, dockerfile,
+instructions, verifier-defenses), writes their findings JSON into an output
+directory, then produces the SSOT + defect-distribution reports.
 
 Semantic review (Layer 2) is run separately by dispatching sub-agents — see
-references/semantic-review-prompt.md and the SKILL. (Behavioral oracle/no-op is
-a delivery-stage gate, out of scope for this skill.)
+QC_GUIDE.md (Part 2 reviewer + Part 3 adversary prompts) and the SKILL. (Behavioral
+oracle/no-op is a delivery-stage gate, out of scope for this skill.)
 
 Usage:
     python run_static_qc.py <tasks-dir> [--out-dir qc_out]

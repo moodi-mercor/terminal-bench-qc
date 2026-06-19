@@ -48,7 +48,7 @@ cp .env.example .env      # then set RLS_KEY=...   (.env is gitignored)
 # 1. pull tasks (or point the pipeline at a folder you already have)
 python scripts/studio_pull.py --n 50 --out tasks_cache       # --list / --names also work
 
-# 2. static QC — 6 gates + reports (run this first, always)
+# 2. static QC — 9 gates + reports (run this first, always)
 python scripts/run_static_qc.py tasks_cache --out-dir qc_out
 
 # 3. (optional) dataset decontamination + near-duplicate scan
@@ -77,7 +77,7 @@ The agent only sees `environment/`. `tests/` and `solution/` are mounted at grad
   solution/solve.sh      # reference answer — grading-time only
 ```
 
-## The 6 static gates
+## The 9 static gates
 
 | Gate | Flags |
 |---|---|
@@ -87,6 +87,9 @@ The agent only sees `environment/`. `tests/` and `solution/` are mounted at grad
 | `check_reward_hack` | tests that pass without work; gameable reward signals |
 | `check_env_fairness` | leftover generators/setup scripts, exposed git history, runtime network |
 | `check_portability` | `solve.sh` bugs — backgrounded daemons, PEP 668 pip, systemd assumptions, … |
+| `check_dockerfile` | reproducibility smells — unpinned base/pip, `apt` no update, `ADD <url>`, `curl\|sh`, `ENTRYPOINT`, test deps in image (WARN) |
+| `check_instructions` | leftover placeholders (TODO/FIXME/lorem); empty or too-short instruction |
+| `check_verifier_defenses` | whether the verifier has an anti-cheat defense (mutated-rerun / recompute / source-grep / re-exec); a defended verifier suppresses adversary cheat-vectors |
 
 ## Measure precision / recall (`eval/`)
 
@@ -97,11 +100,13 @@ python scripts/run_static_qc.py eval/fixtures --out-dir /tmp/fx
 python scripts/score_qc.py /tmp/fx/review-ssot.csv eval/golden_labels.csv
 ```
 
-**Current results** — `TP=6  FP=0  FN=0  TN=1` → **precision 1.00, recall 1.00**:
+**Current results** — `TP=6  FP=0  FN=0  TN=3` → **precision 1.00, recall 1.00**:
 
 | Fixture | QC verdict | Defect caught |
 |---|---|---|
 | `pass/clean-records-etl` | **PASS** | — (clean) |
+| `pass/hidden-truth-verifier-only` | **PASS** | — (near-miss: truth in verify-time `tests/.truth/`, not baked) |
+| `pass/webservice-healthcheck` | **PASS** | — (near-miss: server launched + waited correctly) |
 | `fail/missing-solution` | **FAIL** | `missing-required-file` |
 | `fail/bad-metadata` | **FAIL** | `missing-agent-timeout` (+ generic tags, seconds-as-minutes) |
 | `fail/truth-baked` | **FAIL** | `truth-baked-verifier-reads` |
