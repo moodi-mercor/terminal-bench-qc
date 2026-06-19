@@ -42,7 +42,7 @@ import re
 import shutil
 import subprocess
 
-from common import (FAIL, PASS, WARN, finding, emit, read_text,
+from common import (FAIL, PASS, WARN, finding, emit,
                     discover_tasks, task_paths)
 
 
