@@ -12,6 +12,10 @@ Catches the two reward-hack flavors that are decidable WITHOUT running the task:
      - `test.sh` writes a positive reward unconditionally (not gated on the
        test exit code)
      - the verifier reads a reward/score/status file as the pass signal
+     - a grading script is COPY'd into the agent image and `tests/` invokes it
+       (agent-writable-verifier): the agent overwrites it to force a pass
+     - `test.sh` runs under `set -e` and branches on the verifier's exit code to
+       write the reward — on failure `set -e` aborts before the reward=0 write
 
 These are CANDIDATES, not proofs — a real no-op run confirms them (delivery
 gate). Heuristics are deliberately conservative (high precision) and mostly WARN;
@@ -32,6 +36,9 @@ from common import FAIL, WARN, PASS, finding, emit, read_text, discover_tasks, t
 
 EXISTENCE_FUNCS = {"exists", "isfile", "isdir", "is_file", "is_dir", "lexists"}
 REWARDISH = re.compile(r"(reward|score|status|verdict|result|pass)\b", re.I)
+# a grading script COPY'd into the agent image (verify.py / grader.sh / check.py …)
+VERIFIERISH = re.compile(r"(verif|validat|grade|grader|judge|checker|scorer|oracle|mock)"
+                         r"\w*\.(py|sh)$", re.I)
 
 
 def _calls_assertion(node):
@@ -242,7 +249,73 @@ def _analyze_test_sh(path, name):
                                           "with no preceding success check — always passes.",
                                    location=f"tests/test.sh:{i}",
                                    fix="Gate the reward write on the verifier's exit code."))
+    # `set -e` + a bare pytest whose exit code is branched on to write the reward:
+    # on the failure path `set -e` aborts the script *before* the reward=0 write, so
+    # the no-op produces no reward file instead of 0.0 (oracle/no-op grounding breaks).
+    has_sete = re.search(r"^\s*set\s+-[a-zA-Z]*e", txt, re.M)
+    toggles_off = re.search(r"^\s*set\s+\+e", txt, re.M)
+    runs_pytest = re.search(r"(-m\s+pytest|\bpytest\s)", txt)
+    branches_on_rc = re.search(r"\$\?|^\s*if\s+[^\n]*pytest", txt, re.M)
+    writes_reward = re.search(r"(reward|score)[^\n]*>|>\s*\S*reward", txt, re.I)
+    # the pytest RUNNER neutralised by `|| true|:` (not a `pip install pytest || true`)
+    neutralised = re.search(r"(?:-m\s+pytest|\bpytest\s+[-/.\w])[^\n]*\|\|", txt)
+    if has_sete and not toggles_off and runs_pytest and branches_on_rc \
+            and writes_reward and not neutralised:
+        out.append(finding(name, "anti_cheat", WARN, "test-sh-set-e-reward-abort",
+                           detail="tests/test.sh runs under `set -e` and branches on the "
+                                  "verifier's exit code to write the reward — on a failing "
+                                  "run `set -e` aborts before the reward=0 write, so a no-op "
+                                  "yields no reward file instead of 0.0 (breaks no-op grounding).",
+                           location="tests/test.sh",
+                           fix="Wrap the verifier in `set +e` … `set -e`, or capture its exit "
+                               "code with `rc=$?` immediately, so the reward is always written."))
     return out
+
+
+def _copied_scripts(dockerfile_text):
+    """Yield dest paths of every COPY/ADD whose src or dest is a .py/.sh script."""
+    out = []
+    for ln in dockerfile_text.splitlines():
+        m = re.match(r"\s*(?:COPY|ADD)\s+(.+)", ln, re.I)
+        if not m:
+            continue
+        args = [a for a in m.group(1).split("#")[0].split() if not a.startswith("--")]
+        if len(args) < 2:
+            continue
+        out.append((args[:-1], args[-1]))  # (srcs, dest)
+    return out
+
+
+def _agent_writable_verifier(name, root, p):
+    """A grading script COPY'd into the agent image that the verifier then invokes.
+
+    Classic anti-cheat hole: `COPY verify.py /app/verify.py` and tests/ runs
+    `python /app/verify.py` and greps SUCCESS — the agent (root, no USER drop)
+    overwrites /app/verify.py with one that prints SUCCESS. The grader must live
+    under tests/ (verify-time read-only mount), never in agent-writable space.
+    """
+    df = read_text(p["Dockerfile"])
+    if not df.strip():
+        return []
+    copied = [dest for srcs, dest in _copied_scripts(df)
+              if any(VERIFIERISH.search(os.path.basename(c)) for c in (srcs + [dest]))]
+    if not copied:
+        return []
+    harness = read_text(p["test.sh"]) + "\n" + read_text(p["test_outputs.py"])
+    solve = read_text(p["solve.sh"])
+    for dest in copied:
+        base = os.path.basename(dest.rstrip("/"))
+        # the verifier invokes the copied-in script, it's not under tests/, and the
+        # oracle doesn't (re)generate it (which would make it a legitimate artifact).
+        if base and base in harness and base not in solve and "/tests" not in dest:
+            return [finding(name, "anti_cheat", FAIL, "agent-writable-verifier",
+                            detail=f"Dockerfile copies `{dest}` into the agent image and "
+                                   f"tests/ invokes `{base}` to grade — the agent can "
+                                   "overwrite it to force a pass.",
+                            location="environment/Dockerfile",
+                            fix="Move the grading script into tests/ (verify-time mount); "
+                                "never invoke an agent-writable in-image script as the verifier.")]
+    return []
 
 
 def check_task(name, root):
@@ -250,6 +323,7 @@ def check_task(name, root):
     p = task_paths(root)
     if os.path.isfile(p["test.sh"]):
         out += _analyze_test_sh(p["test.sh"], name)
+    out += _agent_writable_verifier(name, root, p)
     tdir = p["tests"]
     if os.path.isdir(tdir):
         # only files pytest collects — NOT helper scripts (verifier.py, conftest.py),
