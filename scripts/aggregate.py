@@ -19,7 +19,7 @@ import json
 import os
 from collections import Counter, defaultdict
 
-from common import PASS, WARN, FAIL, SEV_RANK, AREAS, worst
+from common import PASS, WARN, FAIL, AREAS, worst
 
 # columns shown in the CSV, grouped by QC part:
 #   static (deterministic): structure, metadata, dockerfile, anti_cheat, dataset

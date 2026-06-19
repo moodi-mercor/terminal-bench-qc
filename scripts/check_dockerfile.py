@@ -21,7 +21,6 @@ Usage:
 Emits findings with area="dockerfile".
 """
 import argparse
-import os
 import re
 
 from common import WARN, PASS, finding, emit, read_text, discover_tasks, task_paths

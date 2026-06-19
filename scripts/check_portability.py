@@ -33,7 +33,7 @@ import glob
 import os
 import re
 
-from common import WARN, PASS, FAIL, finding, emit, read_text, discover_tasks, task_paths
+from common import WARN, PASS, finding, emit, read_text, discover_tasks, task_paths
 
 SERVER_MARK = re.compile(r"\b(uvicorn|gunicorn|fastapi|flask|grpc\.server|"
                          r"add_insecure_port|http\.server|app\.run\(|HTTPServer|"
