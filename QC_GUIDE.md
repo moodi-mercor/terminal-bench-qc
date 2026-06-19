@@ -607,9 +607,14 @@ rest.
 
 ## Stable defect-class titles (for the distribution report)
 
-Use these exact titles so the histogram groups cleanly:
+Use these exact titles so the histogram groups cleanly. Sub-agents (Parts 2–3) must
+emit from this set; the deterministic gates emit these plus a few granular per-field
+siblings (e.g. `junior-time-out-of-range`, `nonpositive-expert-time`,
+`memory-above-client-cap`), which the distribution report counts as they appear.
 
-`missing-required-file`, `missing-metadata`, `generic-category`, `broad-tags`,
+`missing-required-file`, `missing-difficulty`, `missing-category`, `missing-tags`,
+`missing-expert-time`, `missing-junior-time`, `missing-verifier-timeout`,
+`missing-agent-timeout`, `generic-category`, `broad-tags-only`, `some-broad-tags`,
 `expert-time-out-of-range`, `cpus-above-client-cap`, `dockerfile-copies-solution`,
 `dockerfile-copies-tests`, `truth-baked-verifier-reads`, `tests-bake-verifier-reads`,
 `untested-requirement`, `phantom-test`, `brittle-string-match`, `weak-assertion`,
