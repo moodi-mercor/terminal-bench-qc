@@ -3,6 +3,8 @@
 
 Reads all `*.json` finding arrays in a directory and produces:
   - review-ssot.csv          one row per task, per-area verdict + critical issues
+  - defects.csv              one row per flagged finding: task, layer, area, severity,
+                             defect, location, REASON (why it failed), fix
   - review-ssot.md           per-task detailed findings (locations + fixes)
   - defect-distribution.md   dataset-level counts: defect rate, by area, by class
 
@@ -19,7 +21,7 @@ import json
 import os
 from collections import Counter, defaultdict
 
-from common import PASS, WARN, FAIL, AREAS, worst
+from common import PASS, WARN, FAIL, AREAS, worst, layer_of
 
 # columns shown in the CSV, one per finding area, grouped by QC layer:
 #   Layer 1 static (deterministic): structure, metadata, dockerfile, anti_cheat, dataset
@@ -125,6 +127,29 @@ def write_csv(rows, path):
             r = rows[task]
             w.writerow([task] + [r[c] for c in COLS] +
                        [r["overall"], r["critical_issues"]])
+
+
+def _flat(s):
+    """Collapse newlines/whitespace so a finding's text stays on one CSV cell."""
+    return " ".join((s or "").split())
+
+
+def write_defects_csv(findings, path):
+    """One row per flagged finding: the defect + WHY it failed + the fix + which
+    layer caught it. This is the "what's wrong and why" export — defects only
+    (FAIL and WARN), FAIL first. PASS findings are omitted."""
+    order = {FAIL: 0, WARN: 1}
+    flagged = sorted((f for f in findings if f.get("severity") in (FAIL, WARN)),
+                     key=lambda f: (order[f["severity"]], f["task"], f.get("area", "")))
+    with open(path, "w", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(["task", "layer", "area", "severity", "defect",
+                    "location", "reason", "fix"])
+        for f in flagged:
+            w.writerow([f["task"], layer_of(f), f.get("area", ""), f["severity"],
+                        f.get("title", ""), f.get("location", ""),
+                        _flat(f.get("detail", "")), _flat(f.get("fix", ""))])
+    return len(flagged)
 
 
 def write_details(tasks, rows, path):
@@ -241,10 +266,11 @@ def main():
     write_csv(rows, os.path.join(out_dir, "review-ssot.csv"))
     write_details(tasks, rows, os.path.join(out_dir, "review-ssot.md"))
     write_distribution(findings, rows, os.path.join(out_dir, "defect-distribution.md"))
+    n_defects = write_defects_csv(findings, os.path.join(out_dir, "defects.csv"))
 
     n_fail = sum(1 for r in rows.values() if r["overall"] == FAIL)
-    print(f"[aggregate] {len(rows)} tasks, {n_fail} FAIL -> "
-          f"{out_dir}/review-ssot.csv, review-ssot.md, defect-distribution.md")
+    print(f"[aggregate] {len(rows)} tasks, {n_fail} FAIL, {n_defects} flagged findings -> "
+          f"{out_dir}/review-ssot.csv, review-ssot.md, defect-distribution.md, defects.csv")
 
 
 if __name__ == "__main__":

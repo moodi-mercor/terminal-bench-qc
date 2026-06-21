@@ -155,6 +155,8 @@ defect), then improve precision.
 ## Outputs
 
 - `review-ssot.csv` — one row per task, per-area verdicts + critical issues.
+- `defects.csv` — one row per flagged finding: `task, layer, area, severity, defect,
+  location, reason, fix`. The defects-only export detailing **why** each task failed.
 - `review-ssot.md` — per-task findings with locations and fixes.
 - `defect-distribution.md` — defect rate + counts by area and by defect class.
   This is the answer to "how many defects / what distribution".

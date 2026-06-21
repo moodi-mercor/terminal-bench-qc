@@ -93,8 +93,10 @@ python skills/trajectory-audit/scripts/triage.py     qc_out/attempts.jsonl --out
 ```
 
 **Outputs** (in `qc_out/`): `review-ssot.csv` (one row per task, a verdict per area),
-`review-ssot.md` (findings with file/line + fixes), `defect-distribution.md` (how many
-defects, by type — the headline answer), `quarantine.txt` / `promote.txt` (the gate).
+`defects.csv` (one row per flagged finding — task, layer, area, severity, defect,
+location, **reason**, fix — the "what's wrong and why" export), `review-ssot.md`
+(findings with file/line + fixes), `defect-distribution.md` (how many defects, by type
+— the headline answer), `quarantine.txt` / `promote.txt` (the gate).
 
 ## Measure precision / recall (`eval/`)
 
