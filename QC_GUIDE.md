@@ -569,12 +569,14 @@ PASS `cheat-vector-ok`.
 
 ## Sub-agent orchestration (Parts 2–3 driver)
 
-After Part 1, fan out **one sub-agent per task, in parallel batches** (independent
-tasks → embarrassingly parallel): the reviewer (Part 2) writes
-`qc_out/sem_<task>.json`, the adversary (Part 3) writes `qc_out/adv_<task>.json`.
-Then re-run `aggregate.py`, which auto-drops the false positives the reviewer
-refuted (precision) and folds in every new semantic and cheat-vector finding
-(recall).
+After Part 1, run the reviewer (Part 2 → `qc_out/sem_<task>.json`) and adversary
+(Part 3 → `qc_out/adv_<task>.json`) once per task. Two ways: **programmatically via
+the Anthropic API** — `skills/static-semantic-qc/scripts/judge.py`, which uses a
+**Claude API key** (`ANTHROPIC_API_KEY` / `ANT_KEY`, *not* your Claude.ai account)
+and scales to a large set; or **interactively**, fanning out one sub-agent per task
+from a Claude Code session (independent tasks → embarrassingly parallel). Then re-run
+`aggregate.py`, which auto-drops the false positives the reviewer refuted (precision)
+and folds in every new semantic and cheat-vector finding (recall).
 
 ### Verification output convention (consumed by `aggregate.py`)
 

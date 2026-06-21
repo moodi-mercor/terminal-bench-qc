@@ -103,11 +103,9 @@ python scripts/run_static_qc.py tasks_cache --out-dir qc_out
 Writes per-gate findings JSON plus the SSOT and distribution reports into `qc_out/`
 (see [Outputs](#outputs)).
 
-### 3. Parts 2–3 — semantic QC, fan out sub-agents per task
-After static, dispatch **one reviewer and one adversary sub-agent per task**, in
-parallel batches. The criteria and ready-to-run prompts are in
-[`QC_GUIDE.md`](../../QC_GUIDE.md) (Parts 2–3); in brief each writes one JSON file to
-`qc_out/`:
+### 3. Parts 2–3 — semantic QC (LLM judging)
+The reviewer and adversary criteria + ready-to-run prompts are in
+[`QC_GUIDE.md`](../../QC_GUIDE.md) (Parts 2–3). Each writes one JSON file to `qc_out/`:
 
 - **Reviewer** → `sem_<task>.json` — the 5 semantic checks (instruction↔verifier
   alignment, coverage, hygiene, golden-patch, realism) plus false-positive
@@ -115,6 +113,21 @@ parallel batches. The criteria and ready-to-run prompts are in
 - **Adversary** → `adv_<task>.json` — a separate reward-hack red-team. A surviving
   hack is a `semantic-cheat-vector` **WARN candidate** (not a verdict), promoted to
   FAIL only after confirmation.
+
+Two ways to run the judging:
+
+- **Programmatic (default, scalable) — `scripts/judge.py`.** Calls the Anthropic
+  Messages API once per task with the committed prompts and writes the finding JSON.
+  **Use a Claude API key, not your account:** set `ANTHROPIC_API_KEY` (`sk-ant-...`)
+  or `ANT_KEY` in `.env` — the reviewer/adversary calls are billed to that key. It
+  defaults to the latest Claude (`claude-opus-4-8`) and reads the static findings so
+  the reviewer can refute false positives:
+  ```bash
+  python scripts/judge.py <tasks> --out-dir qc_out --static-dir qc_out \
+      --role reviewer            # add --role both to also run the adversary
+  ```
+- **Interactive** — dispatch one reviewer + one adversary sub-agent per task from a
+  Claude Code session (same prompts), for hands-on review of a few tasks.
 
 ### 4. Aggregate everything
 ```bash
