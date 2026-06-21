@@ -15,7 +15,8 @@ Findings schema (one dict per finding; a JSON array per gate):
     "title":    "<short stable label, used for distribution counts>",
     "location": "<file[:line] or ''>",
     "detail":   "<what is wrong>",
-    "fix":      "<how to fix>"
+    "fix":      "<how to fix>",
+    "layer":    "<optional: static|semantic|trajectory|behavioral — cross-layer provenance>"
   }
 
 Keep `title` short and stable per defect class — the dataset defect-distribution
@@ -40,11 +41,32 @@ def worst(severities):
     return out
 
 
-def finding(task, area, severity, title, detail="", location="", fix=""):
-    return {
+def finding(task, area, severity, title, detail="", location="", fix="", layer=""):
+    f = {
         "task": task, "area": area, "severity": severity, "title": title,
         "location": location, "detail": detail, "fix": fix,
     }
+    # Optional cross-layer provenance: which QC layer caught this. Omitted when not
+    # set so existing findings stay unchanged; the gate falls back to AREA_LAYER.
+    if layer:
+        f["layer"] = layer
+    return f
+
+
+# Which QC layer an area belongs to, for cross-layer provenance + the defect gate
+# (shared/gate.py). A finding may override this with an explicit "layer" — e.g.
+# trajectory (Layer 2) findings use area="tests" but layer="trajectory".
+AREA_LAYER = {
+    "structure": "static", "metadata": "static", "dockerfile": "static",
+    "instructions": "static", "anti_cheat": "static", "dataset": "static",
+    "tests": "semantic", "solution": "semantic",
+    "behavioral": "behavioral",
+}
+
+
+def layer_of(f):
+    """The QC layer that produced a finding: explicit `layer`, else mapped from area."""
+    return f.get("layer") or AREA_LAYER.get(f.get("area", ""), "unknown")
 
 
 def emit(findings, out_path):

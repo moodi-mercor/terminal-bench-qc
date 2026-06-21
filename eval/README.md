@@ -26,7 +26,7 @@ Three labeled sources:
    the originally-curated subset. This is the **recall** set (real defects to catch).
 3. **Real public TerminalBench tasks** (`tb_clean_labels.csv`, 226 tasks) — the
    `original-tasks/` corpus from github.com/laude-institute/terminal-bench, normalized
-   from TB v1 → TB2 by `scripts/import_tb_tasks.py` and labeled `is_defect=0`. This is
+   from TB v1 → TB2 by `skills/static-semantic-qc/scripts/import_tb_tasks.py` and labeled `is_defect=0`. This is
    the **precision / clean baseline**: every FAIL here is a false positive to explain
    (or a genuine latent defect in public TB). See "Why normalize, not dual-format" below.
 
@@ -36,8 +36,8 @@ All ground truth uses the columns
 ## Run against the fixtures (offline, deterministic)
 
 ```bash
-python scripts/run_static_qc.py eval/fixtures --out-dir /tmp/fx_qc
-python scripts/score_qc.py /tmp/fx_qc/review-ssot.csv eval/golden_labels.csv
+python skills/static-semantic-qc/scripts/run_static_qc.py eval/fixtures --out-dir /tmp/fx_qc
+python shared/score_qc.py /tmp/fx_qc/review-ssot.csv eval/golden_labels.csv
 ```
 Expected: the 6 `fail/*` fixtures score FAIL, the 3 `pass/*` fixtures score PASS →
 precision = recall = 1.0 on the overlap.
@@ -46,9 +46,9 @@ precision = recall = 1.0 on the overlap.
 
 ```bash
 cp .env.example .env          # then put your RL Studio key in it: RLS_KEY=...
-python scripts/studio_pull.py --names @eval/ots_tasks.txt --out tasks_cache
-python scripts/run_static_qc.py tasks_cache --out-dir qc_out
-python scripts/score_qc.py qc_out/review-ssot.csv eval/golden_labels.csv
+python skills/static-semantic-qc/scripts/studio_pull.py --names @eval/ots_tasks.txt --out _local/tasks_cache
+python skills/static-semantic-qc/scripts/run_static_qc.py _local/tasks_cache --out-dir qc_out
+python shared/score_qc.py qc_out/review-ssot.csv eval/golden_labels.csv
 ```
 `score_qc.py` only scores tasks present in both the QC output and the labels, so it
 ignores tasks you didn't pull.
@@ -148,12 +148,12 @@ reflects the true ~10% cold-discovery yield — defects were **not** padded to h
 
 ```bash
 # Pull the real OTS/report tasks when available in Studio.
-python scripts/studio_pull.py --names @eval/expanded_ots_tasks.txt --out tasks_cache_expanded
+python skills/static-semantic-qc/scripts/studio_pull.py --names @eval/expanded_ots_tasks.txt --out _local/tasks_cache_expanded
 # Pull the cold-discovery batch.
-python scripts/studio_pull.py --names @eval/expanded_v200_ots_tasks.txt --out tasks_cache_v200
+python skills/static-semantic-qc/scripts/studio_pull.py --names @eval/expanded_v200_ots_tasks.txt --out _local/tasks_cache_v200
 
 # Ensure the public TB precision controls exist.
-python scripts/import_tb_tasks.py
+python skills/static-semantic-qc/scripts/import_tb_tasks.py
 
 # Score every present piece against the expanded labels.
 bash eval/run_expanded_eval.sh
@@ -214,7 +214,7 @@ truthful recall, counting the 2 found defects the pipeline did not flag, is
 git clone --depth 1 --filter=blob:none --sparse \
   https://github.com/laude-institute/terminal-bench.git references/tb-public-src
 (cd references/tb-public-src && git sparse-checkout disable)   # tasks live in original-tasks/
-python scripts/import_tb_tasks.py            # -> tasks_cache_tb/ + eval/tb_clean_labels.csv
+python skills/static-semantic-qc/scripts/import_tb_tasks.py            # -> tasks_cache_tb/ + eval/tb_clean_labels.csv
 
 # then (with tasks_cache pulled too) score OTS + TB together
 bash eval/run_combined_eval.sh

@@ -1,16 +1,17 @@
 # Terminal-Bench QC — Criteria & Rubric
 
-The operating reference for this skill: **what each check looks for and how to
-judge it.** Pair it with [`SKILL.md`](SKILL.md) (what it is / how to run) and the
-scripts in `scripts/`. This file is intentionally scrubbed of client-specific
-feedback and delivery-stage strategy — those internal docs are kept out of this
-repo.
+The operating reference for the Layer-1 (static + semantic) skill: **what each check
+looks for and how to judge it.** Pair it with
+[`SKILL.md`](skills/static-semantic-qc/SKILL.md) (what it is / how to run) and the
+gate scripts in `skills/static-semantic-qc/scripts/`. This file is intentionally
+scrubbed of client-specific feedback and delivery-stage strategy — those internal
+docs are kept out of this repo.
 
 **Contents**
 
 - [How the parts fit together](#how-the-parts-fit-together) — start here for the mental model
 - [Verdict scale](#verdict-scale) — PASS / WARN / FAIL definitions
-- [Part 1 — Static checks](#part-1--static-checks-deterministic-scripts) — the deterministic `scripts/` gates
+- [Part 1 — Static checks](#part-1--static-checks-deterministic-scripts) — the deterministic gates (`skills/static-semantic-qc/scripts/`)
 - [Part 2 — Semantic review](#part-2--semantic-review-per-task-sub-agent) — the per-task reviewer (5 checks + FP verification)
 - [Part 3 — Adversarial reward-hack pass](#part-3--adversarial-reward-hack-pass-per-task-sub-agent) — the per-task red-team
 - [Part 4 — Dataset-level](#part-4--dataset-level) — decontamination, near-duplicates
@@ -25,7 +26,7 @@ has four parts. **Every part scores tasks by *reading* them; no task is executed
 here** — runtime confirmation is the delivery-stage behavioral gate, which is
 [out of scope](#out-of-scope-behavioral).
 
-- **Part 1 — Static checks.** Deterministic `scripts/` that flag *candidates*
+- **Part 1 — Static checks.** Deterministic gate scripts that flag *candidates*
   mechanically across every task. Cheap, so run first.
 - **Part 2 — Semantic review.** One **reviewer** sub-agent per task. It applies the
   judgment the scripts can't (the five checks in Part 2) *and* verifies Part 1's
@@ -560,7 +561,7 @@ PASS `cheat-vector-ok`.
 - **Decontamination** — compare each instruction to the public-benchmark corpus
   (`data/decontam_corpus.jsonl`: Terminal-Bench + SWE-bench + LiveCodeBench + Aider,
   the four NVIDIA names) by similarity; high similarity ⇒ possible contamination /
-  trivially searchable. Rebuild with `scripts/build_decontam_corpus.py`.
+  trivially searchable. Rebuild with `skills/static-semantic-qc/scripts/build_decontam_corpus.py`.
 - **Near-duplicate / template reuse** — high pairwise similarity *within* a
   delivery ⇒ low diversity.
 
@@ -598,10 +599,12 @@ into a verdict — they only adjudicate other findings.
 ## Out of scope: behavioral
 
 The runtime **oracle/no-op** gate (reference solution → pass, untouched container
-→ fail) is run at the **delivery stage** on the client's target infra, not by this
-skill. If those results are available, drop them into the findings dir as
-`{task, area:"behavioral", severity, title, ...}` and they aggregate with the
-rest.
+→ fail) is out of scope for *this* (Layer 1) skill — it is its own **Layer 3**
+skill, [`behavioral-qc`](skills/behavioral-qc/SKILL.md), and at the delivery stage
+runs on the client's target infra. It emits the same schema
+(`{task, area:"behavioral", severity, title, ..., "layer":"behavioral"}`), so its
+findings aggregate into the same SSOT and a behavioral `FAIL` is sticky over a
+Layer-1 `PASS` (see the repo `README.md` defect gate).
 
 ---
 

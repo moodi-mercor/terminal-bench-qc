@@ -15,19 +15,26 @@ description: >-
   cross-client feedback (NVIDIA, MAI, GDM, Reflection).
 ---
 
-# Terminal-Bench OTS — Quality Control
+# Terminal-Bench OTS — Quality Control (Layer 1: static + semantic)
 
 Flag QC defects in Terminal-Bench OTS tasks — deterministically where possible —
 and report **how many** defects exist and **their distribution**.
 
-**This skill is the static + semantic + dataset QC pass.** The runtime
-**behavioral gate** (oracle solution → score 1.0, untouched container → 0.0) runs
-at the delivery stage on the client's target infra (harbor + Modal) and is out of
-scope here — this skill runs cheaply on large task sets and feeds that gate. If
-behavioral results exist, drop them into `qc_out/` as findings and they aggregate
-with the rest.
+**This skill is Layer 1 — the static + semantic + dataset QC pass**, the cheapest
+and first stage. It only *reads* tasks, so it scales to thousands. Two sibling
+skills go deeper on the suspects it can't decide by reading:
 
-For what each check looks for and how to judge it, see **[`QC_GUIDE.md`](QC_GUIDE.md)** — the canonical rubric.
+- **Layer 2 — [`trajectory-audit`](../trajectory-audit/SKILL.md)**: confirms verifier
+  fairness against *real eval rollouts* once a batch has run.
+- **Layer 3 — [`behavioral-qc`](../behavioral-qc/SKILL.md)**: *runs* the task (oracle
+  → 1.0, no-op → 0) to catch what only shows up at execution time.
+
+All three emit the same finding schema and roll up through `../../shared/aggregate.py`
++ `../../shared/gate.py`: a `FAIL` from any layer is **sticky** (a later `PASS` can't
+clear it), and the gate quarantines FAILed tasks so they don't advance mislabeled as
+clean. See the repo [`README.md`](../../README.md) "defect gate" for the contract.
+
+For what each check looks for and how to judge it, see **[`QC_GUIDE.md`](../../QC_GUIDE.md)** — the canonical rubric.
 
 ## Task structure (TB2 / harbor)
 
@@ -52,9 +59,9 @@ image is a defect.
 ## The pipeline
 
 Four parts, cheapest first — the same Parts 1–4 used in
-[`QC_GUIDE.md`](QC_GUIDE.md). Every part scores tasks by **reading** them (the
+[`QC_GUIDE.md`](../../QC_GUIDE.md). Every part scores tasks by **reading** them (the
 runtime behavioral gate is separate; see above). All parts emit the same findings
-schema (`scripts/common.py`) and aggregate into one SSOT via `aggregate.py`.
+schema (`../../shared/common.py`) and aggregate into one SSOT via `../../shared/aggregate.py`.
 
 | Part | What it checks | How | Entry point |
 |---|---|---|---|
@@ -99,7 +106,7 @@ Writes per-gate findings JSON plus the SSOT and distribution reports into `qc_ou
 ### 3. Parts 2–3 — semantic QC, fan out sub-agents per task
 After static, dispatch **one reviewer and one adversary sub-agent per task**, in
 parallel batches. The criteria and ready-to-run prompts are in
-[`QC_GUIDE.md`](QC_GUIDE.md) (Parts 2–3); in brief each writes one JSON file to
+[`QC_GUIDE.md`](../../QC_GUIDE.md) (Parts 2–3); in brief each writes one JSON file to
 `qc_out/`:
 
 - **Reviewer** → `sem_<task>.json` — the 5 semantic checks (instruction↔verifier
@@ -111,7 +118,7 @@ parallel batches. The criteria and ready-to-run prompts are in
 
 ### 4. Aggregate everything
 ```bash
-python scripts/aggregate.py qc_out --out-dir qc_out
+python ../../shared/aggregate.py qc_out --out-dir qc_out
 ```
 Re-run once the semantic (and any externally-supplied behavioral) findings land in
 `qc_out/`: refuted false positives are dropped (precision) and new semantic +
@@ -125,7 +132,7 @@ finding; a task's overall verdict is the worst area. **FAIL** = must fix before
 delivery (e.g. missing file, leak the agent can read, untested requirement,
 phantom verifier, hardcoded solution); **WARN** = fix but non-blocking; **PASS** =
 clean or trivially cosmetic. Full definitions and the per-defect breakdown are in
-[`QC_GUIDE.md`](QC_GUIDE.md).
+[`QC_GUIDE.md`](../../QC_GUIDE.md).
 
 Static flags are **candidates, not verdicts** — confirm leak survival (build +
 `ls`) and exploitability before treating a static FAIL as real, and down-rank
@@ -213,23 +220,27 @@ confirmation** — `check_verifier_defenses` already suppresses ~81% of them, an
 skeptic or behavioral confirm promotes the rest. Report the converged combined
 numbers before applying to the full dataset.
 
-## Beyond static + semantic (optional / delivery)
+## Next layers (deeper QC on the suspects this layer can't decide)
 
-- **Behavioral gate (opt-in, confirm-to-run)** — `scripts/check_behavioral.py` is
-  the only part that EXECUTES the task (oracle must score 1.0, no-op must score 0;
-  optional `--reward-iso`). It is expensive (Docker per task), so by **default it
-  runs nothing — it prints the plan**; add **`--execute`** to actually run, and only
-  do so **targeted** on flagged tasks or a sample. The authoritative full version is
-  the client's delivery-stage gate.
-  - plan only: `python scripts/check_behavioral.py tasks_cache --only <names>`
-  - run it:   `python scripts/check_behavioral.py tasks_cache --only <names> --execute`
+Feed `qc_out/promote.txt` (from `python ../../shared/gate.py qc_out`) into the next
+layer so the expensive checks only see still-clean tasks:
+
+- **Layer 2 — trajectory ([`../trajectory-audit`](../trajectory-audit/SKILL.md))** —
+  confirms verifier fairness against real eval rollouts once a batch has run.
+- **Layer 3 — behavioral ([`../behavioral-qc`](../behavioral-qc/SKILL.md))** — the
+  only check that EXECUTES the task (oracle → 1.0, no-op → 0). Opt-in / expensive;
+  run it targeted on the promoted suspects, then re-aggregate + re-gate.
+
+Both emit the same schema, so their findings fold into the same `qc_out/` SSOT and a
+behavioral `FAIL` overrides this layer's `PASS` (sticky-FAIL gate).
+
 - **Delivery report** — `python scripts/delivery_report.py <tasks> --ssot qc_out/review-ssot.csv`
   emits the difficulty / category / language distributions + diversity flags clients
   expect at handoff.
 
 ## References
 
-- **[`QC_GUIDE.md`](QC_GUIDE.md)** — the QC rubric: what every check looks for, the
+- **[`QC_GUIDE.md`](../../QC_GUIDE.md)** — the QC rubric: what every check looks for, the
   semantic-review criteria + FP rules, verdict scale, the ready-to-run sub-agent
   prompts, and the stable defect-class titles. This is all the skill needs to run.
 

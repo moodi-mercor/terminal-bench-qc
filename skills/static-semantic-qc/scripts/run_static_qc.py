@@ -1,20 +1,26 @@
 #!/usr/bin/env python3
 """Run every deterministic (static) QC gate over a tasks tree and aggregate.
 
-This is the one-command entry point for Layers 0-1. It runs all nine static gates
-(structure, metadata, leakage, reward-hack, env-fairness, portability, dockerfile,
-instructions, verifier-defenses), writes their findings JSON into an output
-directory, then produces the SSOT + defect-distribution reports.
+This is the one-command entry point for the static half of Layer 1. It runs all
+nine static gates (structure, metadata, leakage, reward-hack, env-fairness,
+portability, dockerfile, instructions, verifier-defenses), writes their findings
+JSON into an output directory, then produces the SSOT + defect-distribution reports.
 
-Semantic review (Layer 2) is run separately by dispatching sub-agents — see
-QC_GUIDE.md (Part 2 reviewer + Part 3 adversary prompts) and the SKILL. (Behavioral
-oracle/no-op is a delivery-stage gate, out of scope for this skill.)
+The semantic half of Layer 1 (reviewer + adversary) is run separately by
+dispatching sub-agents — see QC_GUIDE.md and this skill's SKILL.md. Trajectory
+(Layer 2) and behavioral (Layer 3) are separate sibling skills; all layers emit the
+same finding schema and roll up through shared/aggregate.py + shared/gate.py.
 
 Usage:
     python run_static_qc.py <tasks-dir> [--out-dir qc_out]
 """
 import argparse
 import os
+import sys
+
+# the cross-layer contract (aggregate + canonical schema) lives in shared/
+sys.path.insert(0, os.path.normpath(os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "shared")))
 
 import check_structure
 import check_metadata
@@ -63,7 +69,6 @@ def main():
         print(f"  [{label}] {len(findings)} findings, {n_fail} FAIL -> {fname}")
 
     print("Aggregating...")
-    import sys
     sys.argv = ["aggregate", args.out_dir, "--out-dir", args.out_dir]
     aggregate.main()
 

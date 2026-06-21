@@ -21,13 +21,15 @@ from collections import Counter, defaultdict
 
 from common import PASS, WARN, FAIL, AREAS, worst
 
-# columns shown in the CSV, grouped by QC part:
-#   static (deterministic): structure, metadata, dockerfile, anti_cheat, dataset
-#   semantic (sub-agent):   instructions, tests, solution
-# (behavioral oracle/no-op is a separate delivery-stage gate, not run by this
-#  skill; if external behavioral findings are dropped in, add "behavioral" here.)
+# columns shown in the CSV, one per finding area, grouped by QC layer:
+#   Layer 1 static (deterministic): structure, metadata, dockerfile, anti_cheat, dataset
+#   Layer 1 semantic (sub-agent):   instructions, tests, solution
+#   Layer 2 trajectory findings fold into `tests`; Layer 3 behavioral -> `behavioral`.
+# This aggregator is the cross-layer merge point: a task's per-area verdict is the
+# WORST finding in that area, and overall is the worst area — so a FAIL from ANY
+# layer is sticky and a later layer's PASS can never downgrade it (see shared/gate.py).
 COLS = ["structure", "metadata", "dockerfile", "anti_cheat", "dataset",
-        "instructions", "tests", "solution"]
+        "instructions", "tests", "solution", "behavioral"]
 
 
 def load_findings(d):

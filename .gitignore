@@ -3,8 +3,16 @@ __pycache__/
 *.pyc
 .DS_Store
 .env
+.claude/settings.local.json
 eval/runs/
 /tmp/
 
 # local cache, run outputs, and reference material (moved under _local/)
 _local/
+
+# generated QC run outputs (any skill / layer)
+**/qc_out/
+qc_out/
+
+# Layer 2 trajectory-audit local run outputs (pulled batches, judged findings)
+skills/trajectory-audit/audit_out*/
