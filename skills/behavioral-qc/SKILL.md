@@ -56,11 +56,30 @@ prints the Docker plan. Add **`--execute`** to actually build and run.
 # plan only (safe — runs nothing, just shows the docker commands):
 python scripts/check_behavioral.py <tasks-dir> --only task-a,task-b
 
-# actually run (opt-in, expensive; needs Docker/colima running):
+# actually run (opt-in, expensive; needs Docker running):
 python scripts/check_behavioral.py <tasks-dir> --only task-a,task-b --execute [--reward-iso]
+
+# bulk run off-amd64 (e.g. an Apple-Silicon laptop), parallel + resilient:
+python scripts/check_behavioral.py <tasks-dir> --only "$(paste -sd, qc_out/promote.txt)" \
+    --execute --native-arch --workers 4 --build-timeout 600 --timeout 90 \
+    --out qc_out/findings_behavioral.json
 ```
 
-- `--only` — comma-separated task names (target the flagged suspects).
+- `--only` — comma-separated task names (target the flagged suspects, or a promoted set).
+- `--workers N` — run N tasks concurrently. Builds are CPU-bound, so this scales near-
+  linearly; **4 is a safe laptop default** (1 = sequential). Turned a ~8 h × 82-task
+  sweep into ~2 h.
+- `--native-arch` — strip the `FROM --platform=linux/amd64` pin and build for the host
+  arch. **Essential off-amd64**: qemu emulation of an amd64 `apt`/`gcc` build is so slow
+  it effectively hangs; native builds take seconds. Results are *arch-indicative* for
+  arch-sensitive tasks (gcc/strace), authoritative for pure-Python.
+- `--timeout` (per-trial, default 600) / `--build-timeout` (default 600) — keep
+  `--timeout` short (e.g. 90) so a **server-style verifier that blocks** (waits on a
+  daemon the no-op never starts) is killed fast and recorded as "didn't pass"; the build
+  needs its own longer budget for `apt`/`pip`.
+- **Resume:** findings are persisted **after each task**, and a re-run **skips tasks
+  already in `--out`** — so a laptop sleep / interrupt can't wipe a long run; just re-run.
+  Pass `--no-resume` to start clean.
 - `--verifier-cmd` — how to invoke the verifier inside the container (default
   `bash /tests/test.sh`); match it to your harness if needed.
 - `--out` — findings JSON path (default `findings_behavioral.json`); drop it into the
@@ -83,9 +102,14 @@ actually ran on it.
 
 ## Notes
 
-- **Needs Docker.** Start colima / Docker first; without `--execute` it never touches
-  Docker. See the local-run notes in the workspace memory for the colima
-  BuildKit / `--platform` gotchas.
+- **Needs Docker.** Start Docker (or colima) first; without `--execute` it never touches
+  Docker. **Off amd64 (Apple Silicon), pass `--native-arch`** — without it, the
+  emulated amd64 `apt`/`gcc` build is so slow the run effectively hangs.
+- **Bulk runs are an "overnight"-class job even native + parallel.** Each native build
+  is ~3 min and there's no cross-task cache reuse; with `--workers 4`, ~80 tasks ≈ 2 h.
+  Use the resume (persist-per-task + skip-already-done) and just re-run after a sleep.
+- The authoritative confirmation is the **delivery-stage** run on native amd64 infra
+  (harbor + Modal); `--native-arch` results are indicative for arch-sensitive tasks.
 - **Single-container approximation.** Real harbor uses a *separate* verifier
   container; this runs the verifier in the same image with `tests/` + `solution/`
   mounted read-only. Enough for no-op/oracle, not a full harbor replica.

@@ -37,11 +37,13 @@ Usage:
 Emits findings with area="behavioral".
 """
 import argparse
+import concurrent.futures as cf
 import os
 import re
 import shutil
 import subprocess
 import tempfile
+import threading
 
 from common import (FAIL, PASS, WARN, finding, emit,
                     discover_tasks, task_paths, read_text)
@@ -171,6 +173,9 @@ def main():
     ap.add_argument("--build-timeout", type=int, default=600, help="docker build cap (s); builds take minutes")
     ap.add_argument("--no-resume", dest="resume", action="store_false",
                     help="ignore any existing --out file and re-run all tasks from scratch")
+    ap.add_argument("--workers", type=int, default=1,
+                    help="run this many tasks concurrently (builds are CPU-bound — "
+                         "4 is a safe laptop default; 1 = sequential)")
     ap.add_argument("--out", default="findings_behavioral.json")
     args = ap.parse_args()
 
@@ -188,7 +193,8 @@ def main():
 
     if not _docker_ok():
         raise SystemExit("docker not found — start colima/Docker, or drop --execute for the plan.")
-    print(f"[behavioral] EXECUTING {len(tasks)} task(s) in Docker (targeted/expensive)…")
+    print(f"[behavioral] EXECUTING {len(tasks)} task(s) in Docker with "
+          f"{args.workers} worker(s) (targeted/expensive)…")
     # Resume-friendly: keep findings for tasks already recorded in args.out (a prior
     # interrupted run), and skip re-running them. Pass --no-resume to start clean.
     findings, done = [], set()
@@ -198,14 +204,30 @@ def main():
             done = {f["task"] for f in findings}
         except Exception:
             findings, done = [], set()
-    for i, (name, root) in enumerate(tasks, 1):
-        if name in done:
-            print(f"  [{i}/{len(tasks)}] {name}: (already recorded, skipping)")
-            continue
-        findings.extend(run_task(name, root, args))
-        # persist after EACH task so a sleep/kill can't wipe completed work
-        emit(findings, args.out)
-        print(f"  [{i}/{len(tasks)}] {name}: {[f['title'] for f in findings if f['task']==name]}")
+    todo = [(n, r) for n, r in tasks if n not in done]
+    if done:
+        print(f"  resume: {len(done)} task(s) already recorded, {len(todo)} to run")
+    # Tasks are independent (own image tag, own build context, own cleanup), so run
+    # them concurrently. The lock guards the shared findings list + the persist write.
+    lock = threading.Lock()
+    counter = {"n": len(done)}
+    def work(name, root):
+        try:
+            res = run_task(name, root, args)
+        except Exception as e:
+            res = [finding(name, "behavioral", WARN, "behavioral-error",
+                           detail=f"runner error: {str(e)[:200]}", location=root)]
+        with lock:
+            findings.extend(res)
+            emit(findings, args.out)  # persist after EACH task — survives sleep/kill
+            counter["n"] += 1
+            print(f"  [{counter['n']}/{len(tasks)}] {name}: {[f['title'] for f in res]}")
+    if args.workers > 1:
+        with cf.ThreadPoolExecutor(max_workers=args.workers) as ex:
+            list(cf.as_completed([ex.submit(work, n, r) for n, r in todo]))
+    else:
+        for n, r in todo:
+            work(n, r)
     fails = sum(1 for f in findings if f["severity"] == FAIL)
     print(f"[behavioral] {len(findings)} findings, {fails} FAIL -> {args.out}")
 
