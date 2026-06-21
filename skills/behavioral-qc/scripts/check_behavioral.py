@@ -42,6 +42,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 
@@ -177,6 +178,8 @@ def main():
                     help="run this many tasks concurrently (builds are CPU-bound — "
                          "4 is a safe laptop default; 1 = sequential)")
     ap.add_argument("--out", default="findings_behavioral.json")
+    ap.add_argument("--yes", "-y", action="store_true",
+                    help="skip the interactive confirmation before --execute (for automation)")
     args = ap.parse_args()
 
     only = {s for s in args.only.split(",") if s}
@@ -190,6 +193,17 @@ def main():
             findings.extend(plan_task(name, root, args))
         emit(findings, args.out)
         return
+
+    # Confirm-to-run: --execute builds + runs tasks in Docker (executes code, minutes
+    # each). Ask before proceeding when run interactively; --yes skips it for automation
+    # (where the caller — e.g. the skill's agent — is expected to have asked the user).
+    if not args.yes and sys.stdin.isatty():
+        est = len(tasks) * 3 // max(args.workers, 1)
+        resp = input(f"[behavioral] About to BUILD + RUN {len(tasks)} task(s) in Docker "
+                     f"(executes code; ~{est}+ min at --workers {args.workers}). Proceed? [y/N] ")
+        if resp.strip().lower() not in ("y", "yes"):
+            print("Aborted — nothing run. (Drop --execute for the plan, or pass --yes to skip this.)")
+            return
 
     if not _docker_ok():
         raise SystemExit("docker not found — start colima/Docker, or drop --execute for the plan.")

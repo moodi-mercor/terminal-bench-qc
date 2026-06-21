@@ -49,8 +49,20 @@ A failed Docker build is itself a defect (`build-fails`). A clean run emits
 
 ## How to run
 
-This gate is **opt-in and confirm-to-run**: by default it runs **nothing** — it
-prints the Docker plan. Add **`--execute`** to actually build and run.
+This gate is **opt-in and confirm-to-run**. By default it runs **nothing** — it
+prints the Docker plan.
+
+> **Always ask the user before running with `--execute`.** This is the only layer
+> that *executes* tasks and it is expensive (a Docker build + trials per task —
+> minutes each; a bulk set is hours and uses real CPU/disk). First do the plan-only
+> dry run, then **show the user the scope and cost and get explicit confirmation**
+> before adding `--execute`:
+> - how many tasks, and which (the flagged suspects, or a promoted set?)
+> - est. time (≈ build + trials per task ÷ `--workers`) and that it executes code
+> - off-amd64? then `--native-arch`; bulk? then `--workers`
+>
+> Only run `--execute` once the user says go. Never kick off a bulk execute on your
+> own initiative.
 
 ```bash
 # plan only (safe — runs nothing, just shows the docker commands):
@@ -84,6 +96,9 @@ python scripts/check_behavioral.py <tasks-dir> --only "$(paste -sd, qc_out/promo
   `bash /tests/test.sh`); match it to your harness if needed.
 - `--out` — findings JSON path (default `findings_behavioral.json`); drop it into the
   shared `qc_out/` so it aggregates with the other layers.
+- `--yes` / `-y` — skip the interactive confirmation. When run in a terminal,
+  `--execute` first **asks for confirmation** (shows task count + est. time); `--yes`
+  bypasses it for automation. (Non-interactive/background runs don't prompt.)
 
 ## Verdict rules
 
