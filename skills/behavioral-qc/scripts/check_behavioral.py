@@ -41,9 +41,10 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
 
 from common import (FAIL, PASS, WARN, finding, emit,
-                    discover_tasks, task_paths)
+                    discover_tasks, task_paths, read_text)
 
 
 def _docker_ok():
@@ -100,7 +101,19 @@ def run_task(name, root, args):
                         detail="missing environment/ or tests/ — cannot run.", location=root)]
     tag = "qcbeh-" + re.sub(r"[^a-z0-9]+", "-", name.lower())[:40]
     out = []
-    rc, log = _run(["docker", "build", "-q", "-t", tag, env_dir], args.timeout)
+    build_cmd = ["docker", "build", "-q", "-t", tag, env_dir]
+    if getattr(args, "native_arch", False):
+        # strip the `FROM --platform=linux/amd64` pin so the image builds for the
+        # host arch — avoids glacial qemu emulation off-amd64. Keeps the original
+        # build context; results are arch-indicative for arch-sensitive tasks.
+        stripped = re.sub(r"--platform=\S+\s*", "", read_text(os.path.join(env_dir, "Dockerfile")))
+        tmp_df = os.path.join(tempfile.gettempdir(), tag + ".Dockerfile")
+        with open(tmp_df, "w") as f:
+            f.write(stripped)
+        build_cmd = ["docker", "build", "-q", "-f", tmp_df, "-t", tag, env_dir]
+    # build gets its own (longer) budget — an image build (apt/pip) takes minutes,
+    # while --timeout stays short so a blocking verifier in a trial dies fast.
+    rc, log = _run(build_cmd, args.build_timeout)
     if rc != 0:
         return [finding(name, "behavioral", FAIL, "build-fails",
                         detail=f"`docker build` failed: {log[-300:]}",
@@ -148,10 +161,16 @@ def main():
     ap.add_argument("--execute", action="store_true",
                     help="ACTUALLY build+run in Docker (expensive). Without this, prints the plan only.")
     ap.add_argument("--reward-iso", action="store_true", help="also run the reward-isolation trial")
+    ap.add_argument("--native-arch", action="store_true",
+                    help="strip the FROM --platform pin and build for the host arch "
+                         "(fast off-amd64; results are arch-indicative for arch-sensitive tasks)")
     ap.add_argument("--verifier-cmd", default="bash /tests/test.sh",
                     help="how to invoke the verifier inside the container")
     ap.add_argument("--workdir", default="/app")
-    ap.add_argument("--timeout", type=int, default=600)
+    ap.add_argument("--timeout", type=int, default=600, help="per-trial cap (s); keep short to kill blocking verifiers")
+    ap.add_argument("--build-timeout", type=int, default=600, help="docker build cap (s); builds take minutes")
+    ap.add_argument("--no-resume", dest="resume", action="store_false",
+                    help="ignore any existing --out file and re-run all tasks from scratch")
     ap.add_argument("--out", default="findings_behavioral.json")
     args = ap.parse_args()
 
@@ -170,13 +189,25 @@ def main():
     if not _docker_ok():
         raise SystemExit("docker not found — start colima/Docker, or drop --execute for the plan.")
     print(f"[behavioral] EXECUTING {len(tasks)} task(s) in Docker (targeted/expensive)…")
-    findings = []
-    for name, root in tasks:
+    # Resume-friendly: keep findings for tasks already recorded in args.out (a prior
+    # interrupted run), and skip re-running them. Pass --no-resume to start clean.
+    findings, done = [], set()
+    if getattr(args, "resume", True) and os.path.isfile(args.out):
+        try:
+            findings = [f for f in __import__("json").load(open(args.out)) if f.get("task")]
+            done = {f["task"] for f in findings}
+        except Exception:
+            findings, done = [], set()
+    for i, (name, root) in enumerate(tasks, 1):
+        if name in done:
+            print(f"  [{i}/{len(tasks)}] {name}: (already recorded, skipping)")
+            continue
         findings.extend(run_task(name, root, args))
-        print(f"  - {name}: {[f['title'] for f in findings if f['task']==name]}")
-    n = emit(findings, args.out)
+        # persist after EACH task so a sleep/kill can't wipe completed work
+        emit(findings, args.out)
+        print(f"  [{i}/{len(tasks)}] {name}: {[f['title'] for f in findings if f['task']==name]}")
     fails = sum(1 for f in findings if f["severity"] == FAIL)
-    print(f"[behavioral] {n} findings, {fails} FAIL -> {args.out}")
+    print(f"[behavioral] {len(findings)} findings, {fails} FAIL -> {args.out}")
 
 
 if __name__ == "__main__":
