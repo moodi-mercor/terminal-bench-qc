@@ -9,7 +9,10 @@ GDM cross-delivery overlap):
      by TF-IDF cosine similarity. High similarity ⇒ the task may be a public
      benchmark task (contamination / trivially searchable).
   2. Near-duplicate / template reuse — OTS tasks are compared to each OTHER; high
-     pairwise similarity ⇒ low diversity from template reuse.
+     pairwise similarity ⇒ low diversity from template reuse. Reflection requires
+     pairwise cosine < 0.90 (all-MiniLM-L6-v2) across THREE artifacts — instruction.md,
+     solve.sh, and test_outputs.py — so all three are checked (instructions also at the
+     tuned 0.6 sensitivity for contamination-style overlap; solve/test at the 0.90 bar).
 
 Two similarity backends, same thresholds and same report:
   - `--method tfidf` (default): stdlib TF-IDF cosine over word tokens. Deterministic,
@@ -76,6 +79,47 @@ def cosine(a, b):
     return num / (na * nb) if na and nb else 0.0
 
 
+def pairwise_dups(texts, names, threshold, method, model, title, artifact):
+    """Flag pairs of tasks whose `artifact` text is >= threshold cosine-similar.
+
+    Used for the solve.sh / test_outputs.py near-duplicate bar (Reflection's 0.90).
+    Self-contained so it works for both the tfidf (default) and embed backends.
+    """
+    idxs = [i for i, t in enumerate(texts) if t and t.strip()]
+    out = []
+    if len(idxs) < 2:
+        return out
+    if method == "embed":
+        import numpy as np
+        from sentence_transformers import SentenceTransformer
+        m = SentenceTransformer(model)
+        E = np.asarray(m.encode([texts[i] for i in idxs],
+                                normalize_embeddings=True, show_progress_bar=False))
+
+        def sim(a, b):
+            return float(E[a] @ E[b])
+    else:
+        toks = [tokens(texts[i]) for i in idxs]
+        idf = build_idf(toks)
+        vecs = [vec(t, idf) for t in toks]
+
+        def sim(a, b):
+            return cosine(vecs[a], vecs[b])
+
+    for a in range(len(idxs)):
+        for b in range(a + 1, len(idxs)):
+            s = sim(a, b)
+            if s >= threshold:
+                ia, ib = idxs[a], idxs[b]
+                out.append(finding(
+                    names[ia], "dataset", WARN, title,
+                    detail=f"{artifact} is {s:.2f} cosine-similar to '{names[ib]}' "
+                           f"(≥ {threshold}) — template reuse / low diversity.",
+                    location=artifact,
+                    fix=f"Make the two tasks' {artifact} meaningfully distinct, or dedupe."))
+    return out
+
+
 def load_corpus(path):
     rows = []
     if path and os.path.isfile(path):
@@ -101,6 +145,8 @@ def main():
     ap.add_argument("--corpus", default=default_corpus)
     ap.add_argument("--contam-threshold", type=float, default=0.5)
     ap.add_argument("--dup-threshold", type=float, default=0.6)
+    ap.add_argument("--strict-dup-threshold", type=float, default=0.90,
+                    help="Reflection's pairwise-similarity bar for solve.sh/test_outputs.py")
     ap.add_argument("--method", choices=["tfidf", "embed"], default="tfidf",
                     help="tfidf (stdlib default) or embed (sentence-transformers cosine)")
     ap.add_argument("--model", default="all-MiniLM-L6-v2",
@@ -110,11 +156,15 @@ def main():
 
     tasks = discover_tasks(args.tasks)
     q_names, q_toks, q_text = [], [], []
+    solve_text, test_text = [], []
     for name, root in tasks:
-        instr = read_text(task_paths(root)["instruction.md"])
+        p = task_paths(root)
+        instr = read_text(p["instruction.md"])
         q_names.append(name)
         q_toks.append(tokens(instr))
         q_text.append(instr)
+        solve_text.append(read_text(p["solve.sh"]))
+        test_text.append(read_text(p["test_outputs.py"]))
 
     corpus = load_corpus(args.corpus)
     c_names = [r.get("name", f"corpus_{i}") for i, r in enumerate(corpus)]
@@ -188,7 +238,7 @@ def main():
     else:
         print("! no corpus loaded — skipping contamination check")
 
-    # 2. intra-set near-duplicates
+    # 2. intra-set near-duplicates — instruction.md (tuned 0.6 sensitivity)
     n = len(q_names)
     for i in range(n):
         for k in range(i + 1, n):
@@ -200,6 +250,12 @@ def main():
                            "set — possible template reuse / low diversity.",
                     location="instruction.md",
                     fix="Confirm the two tasks are meaningfully distinct; dedupe if not."))
+
+    # 2b. solve.sh + test_outputs.py near-duplicates at Reflection's 0.90 bar
+    findings += pairwise_dups(solve_text, q_names, args.strict_dup_threshold,
+                              args.method, args.model, "near-duplicate-solve", "solution/solve.sh")
+    findings += pairwise_dups(test_text, q_names, args.strict_dup_threshold,
+                              args.method, args.model, "near-duplicate-test", "tests/test_outputs.py")
 
     n_out = emit(findings, args.out)
     fails = sum(1 for f in findings if f["severity"] == FAIL)

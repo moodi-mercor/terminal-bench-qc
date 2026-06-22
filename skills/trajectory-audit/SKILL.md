@@ -7,7 +7,9 @@ description: >-
   fair after models have actually run the task. Pulls a completed Studio
   trajectory batch (every attempt already has its score), triages deterministically
   for split-score tasks, all-fail tasks, and any single test that fails across
-  almost every attempt and model, then fans out one judge sub-agent per candidate
+  almost every attempt and model, measures empirical difficulty (avg@8 from the
+  scores — flags tasks the frontier model solves too often and recorded-vs-actual
+  avg_at_8 mismatches), then fans out one judge sub-agent per candidate
   to confirm false-negatives (brittle verifier fails correct work), false-positives
   (weak verifier passes cheats), leaked answers, and runtime/setup bugs. This is the
   POST-RUN stage and needs a Studio batch_id + RLS_KEY; the pre-run static/semantic
@@ -55,6 +57,7 @@ Batch ── Trajectory (one attempt) ── final_score (0/1)
 |---|---|---|---|
 | **1 · Pull** | page the batch → one row per attempt (task, model, score); optional per-test + diff detail for a narrowed task set | no | `pull_batch.py` |
 | **2 · Triage** | deterministic: split-score tasks, all-fail tasks, any test that fails across almost every attempt+model → ranked candidates | no | `triage.py` |
+| **2b · Difficulty** | deterministic: empirical **avg@8** per (task, model) from the scores → flag tasks the frontier model solves > 50% (too easy), and recorded-vs-actual `avg_at_8` mismatches | no | `difficulty.py` |
 | **3 · Judge** | one sub-agent per candidate reads the diff (not the giant transcript) → confirm false-neg / false-pos / cheat / runtime bug | yes, candidates only | dispatch sub-agents |
 | **4 · Aggregate** | fold findings into the shared SSOT + gate | no | `../../shared/aggregate.py` + `../../shared/gate.py` |
 
@@ -72,6 +75,10 @@ python scripts/pull_batch.py batch_c5e617e48b0f41eaa13337976014e396 --out audit_
 
 # 2. triage deterministically -> ranked candidates + findings
 python scripts/triage.py audit_out/attempts.jsonl --out-dir audit_out
+
+# 2b. empirical difficulty (avg@8 from the scores) -> flag too-easy tasks + metadata
+#     mismatches. Pass --tasks-dir to compare against each task.toml's recorded avg_at_8.
+python scripts/difficulty.py audit_out/attempts.jsonl --out-dir audit_out [--tasks-dir <task-trees>]
 
 # 3. enrich the candidates with per-test detail + diffs, then re-triage
 python scripts/pull_batch.py batch_c5e617... --out audit_out/detail.jsonl \
@@ -91,6 +98,10 @@ first — it's the strongest signal a verifier is too strict or env-dependent.
 - `attempts.jsonl` / `detail.jsonl` — one attempt per line (score, and per-test + diff with `--with-tests`).
 - `triage.md` — ranked candidates: split-score, all-fail, and high-fail tests.
 - `findings_trajectory.json` — candidate findings in the shared schema (WARN; confirmed → FAIL by Stage 3).
+- `difficulty.md` / `findings_difficulty.json` — empirical avg@N per task; `difficulty-too-easy`
+  (FAIL when measured on an approved model — Opus 4.8 / GPT-5.4 — with ≥8 attempts and rate
+  > 0.5; WARN otherwise) and `avg-at-8-mismatch` (recorded `avg_at_8` disagrees with the
+  rollouts). These are `area="metadata"`, `layer="trajectory"`, so they fold into the same SSOT.
 
 ## Verdict rules
 

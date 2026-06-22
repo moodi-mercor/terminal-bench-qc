@@ -29,7 +29,7 @@ here** — runtime confirmation is the delivery-stage behavioral gate, which is
 - **Part 1 — Static checks.** Deterministic gate scripts that flag *candidates*
   mechanically across every task. Cheap, so run first.
 - **Part 2 — Semantic review.** One **reviewer** sub-agent per task. It applies the
-  judgment the scripts can't (the five checks in Part 2) *and* verifies Part 1's
+  judgment the scripts can't (the six checks in Part 2) *and* verifies Part 1's
   flags to drop false positives. The question it asks: ***"is this task correct?"***
 - **Part 3 — Adversarial reward-hack pass.** One **adversary** sub-agent per task,
   with the opposite stance: it role-plays the eval model and tries to beat the
@@ -62,38 +62,66 @@ survives the build and is exploitable before treating it as a real defect. Drive
 
 ## Part 1 — Static checks (deterministic, `scripts/`)
 
-**Structure** (`check_structure.py`): required files present & non-empty —
-`task.toml`, `instruction.md`, `environment/Dockerfile`, `tests/test.sh`,
-`solution/solve.sh`; Dockerfile has a base image and isn't trivially empty.
+**Structure + package hygiene** (`check_structure.py`): required files present &
+non-empty — `task.toml`, `instruction.md`, `environment/Dockerfile`, `tests/test.sh`,
+`solution/solve.sh`; Dockerfile has a base image and isn't trivially empty. Plus
+Reflection's package-hygiene rules (all WARN): **task-name-not-kebab** /
+**task-name-too-long** (the dir name must be lowercase-kebab and concise),
+**unnecessary-files** (`.git`/`__pycache__`/`.venv`/`node_modules`/`.DS_Store`/`*.pyc`/
+`*.log` shipped in the package), **crlf-line-endings** (Windows CRLF in task text files,
+unless the task targets Windows), **non-text-asset** (an agent-visible PDF/office doc a
+non-multimodal model can't read).
 
-**Metadata** (`check_metadata.py`): `task.toml` has difficulty / category / tags /
-expert+junior time / verifier+agent timeouts / env resources; category is
-specific (not "programming"); tags specific (not "general"); `junior_time ≥
-expert_time > 0`; time estimates within the difficulty's range (TB2 reference
-bands, in **minutes** — `expert` / `junior`: **easy** 5–60 / 20–120, **medium**
-5–180 / 10–480, **hard** 300–480 / 600–19200); watch the seconds-mistaken-for-minutes
-smell (values ~60× too high ⇒ likely recorded in seconds; if a whole batch is 60×
-high, flag the *pattern*, not each task); `agent_timeout ≥
-verifier_timeout`; resources within client caps (~1 CPU / 4 GB); and
-**internet-flag-contradiction** — `allow_internet=false` while the instruction tells
-the agent to download/fetch from the network (likely unrunnable offline).
+**Metadata** (`check_metadata.py`): **schema-tolerant** — validates both the TB2/OTS
+shape (`difficulty`/`tags`/`expert+junior time` in *minutes*) and Reflection's Harbor
+shape (`subcategory`/`task_objective[]`/`artifact_type[]`/`expert_time_estimate_hours`/
+`model_tested`/`agent_tested`/`avg_at_8`/`[environment].build_timeout_sec`). A task is
+treated as Reflection-shaped when it carries any Reflection-only key, and neither
+schema is flagged for the other's missing fields. Shared to both: category specific
+(not "programming"); verifier+agent timeouts present & positive; `agent_timeout ≥
+verifier_timeout`; env resources within client caps (~1 CPU / 4 GB) and not left at
+the template zero (`placeholder-zero-resource`); **internet-flag-contradiction**
+(`allow_internet=false` while the instruction tells the agent to fetch from the
+network). TB2-only: tags specific (not "general"); `junior_time ≥ expert_time > 0`;
+time within the difficulty band (**easy** 5–60 / 20–120, **medium** 5–180 / 10–480,
+**hard** 300–480 / 600–19200 min) with the seconds-mistaken-for-minutes smell (values
+~60× too high; flag the *pattern* for a whole batch, not each task). Reflection-only:
+`subcategory` present; `task_objective`/`artifact_type` present and drawn from the
+diversity taxonomy (`unknown-task-objective` / `unknown-artifact-type`); difficulty
+benchmarked on the mandated model+agent (`model_tested` ∈ Opus 4.8 / GPT-5.4,
+`agent_tested` = Terminus-2); and the **difficulty bar** — `avg_at_8 ≤ 0.5` (a recorded
+`avg_at_8 > 0.5` is `avg-at-8-too-easy`, **FAIL** — the frontier model solves it too
+often). `build_timeout_sec` present & positive.
 
-**Dockerfile reproducibility** (`check_dockerfile.py`): build-hygiene smells that make
-a task drift across rebuilds (all WARN — non-blocking): **unpinned-base-image**
-(`FROM …:latest`/untagged), **apt-no-update** (`apt-get install` with no `update`),
-**unpinned-pip** (`pip install pkg` with no `==`), **add-remote-url** (`ADD http(s)://`
-fetches at build), **curl-pipe-sh** (`curl … | sh` runs an unpinned remote script),
-**dockerfile-entrypoint** (`ENTRYPOINT` set — client infra overrides startup with
-`sleep infinity`, so anything it launches never comes up; use `CMD`), **test-deps-in-image**
-(a test framework like `pytest` installed in the agent image — test deps belong in the
-verifier). Structure (no `FROM`) stays in `check_structure.py`; COPY-leaks in
-`check_leakage.py`.
+**Dockerfile reproducibility + structuring** (`check_dockerfile.py`): build-hygiene
+smells + Reflection's Dockerfile-structuring rules (all WARN — non-blocking).
+**unpinned-base-image** (`FROM …:latest`/untagged) is universal; the Harbor-specific
+base-image rules fire only on **Reflection-schema tasks** (auto-detected via
+`is_reflection_schema`, so legacy OTS tasks aren't blanketed): **base-image-not-digest-pinned**
+(tagged but no `@sha256` — Reflection requires digest pinning), **base-image-not-approved**
+(`FROM` outside the pre-approved set: python/debian/ubuntu/node/rust/go/gcc/ruby/maven/
+eclipse-temurin on `public.ecr.aws/docker/library`). Universal structuring smells: **apt-no-update** (`apt-get install`
+with no `update`), **apt-not-consolidated** (apt installs split across >1 RUN layer),
+**apt-get-upgrade** (defeats digest pinning), **unpinned-pip** (`pip install pkg` with no
+`==`), **add-remote-url** (`ADD http(s)://` fetches at build), **curl-pipe-sh** (`curl … | sh`),
+**missing-multistage-build** (compiles an artifact — `cargo/go build`, `mvn package`,
+`npm run build`, `dotnet publish` — in a single stage, so the toolchain ships to runtime),
+**broad-chmod** (`chmod -R` rewrites every file's mode), **dockerfile-heredoc-source**
+(source embedded via `RUN cat > f <<EOF` — put it on disk and COPY it),
+**archive-fixture-not-extracted** (a `.tar.gz`/`.zip` COPY'd in as an opaque archive —
+extract at build), **missing-dockerignore** (non-trivial `environment/` tree with no
+`.dockerignore`), **dockerfile-entrypoint** (`ENTRYPOINT` set — client infra overrides
+startup with `sleep infinity`; use `CMD`), **test-deps-in-image** (a test framework like
+`pytest` baked into the agent image — test deps belong in the verifier). Structure
+(no `FROM`) stays in `check_structure.py`; COPY-leaks in `check_leakage.py`.
 
 **Instruction static heuristics** (`check_instructions.py`): the mechanically-decidable
 instruction defects (the nuanced clarity/over-spec calls are Part 2's job):
 **instruction-placeholder** (leftover TODO/FIXME/lorem/`<PLACEHOLDER>`),
-**instruction-too-short** (almost no prompt ⇒ underspecified), **instruction-empty**
-(missing/empty — FAIL).
+**instruction-too-short** (almost no prompt ⇒ underspecified), **instruction-too-long**
+(over ~1500 tokens — Reflection caps instruction length), **instruction-relative-path**
+(explicit `./`/`../` paths — Reflection requires absolute paths for files the agent
+reads/modifies/creates), **instruction-empty** (missing/empty — FAIL).
 
 **Reward-hack screen** (`check_reward_hack.py`): the statically-decidable half of
 reward-hacking — tests that pass without the work, and gameable pass signals:
@@ -122,8 +150,28 @@ reward-hacking — tests that pass without the work, and gameable pass signals:
   code to write the reward. On a failing run `set -e` aborts *before* the `reward=0`
   write, so a no-op produces no reward file instead of 0.0 (breaks no-op grounding).
   Fix: bracket the verifier in `set +e` … `set -e`, or capture `rc=$?` immediately.
+- **Runtime install in the verifier** (`test-runtime-install`, WARN — Reflection-schema
+  tasks only) — `tests/test.sh` runs `apt-get`/`pip install`/`npm ci`/`curl … | sh` at
+  verify time. Verifier deps must be baked into the (verifier) image, not pulled from the
+  network during grading.
+- **Non-standard reward path** (`reward-path-nonstandard`, WARN — Reflection-schema tasks
+  only) — `test.sh` writes the reward to a literal path other than the Harbor-standard
+  `/logs/verifier/reward.txt` (which must hold `1` for success / `0` for failure).
+- **Pre-created reward** (`reward-pre-created`, WARN — universal) — a `reward.txt` is
+  shipped in `environment/` or baked by the Dockerfile, so the task starts already
+  "passed." The reward must be written by the verifier at run time.
 These are candidates; a no-op run confirms them. (Subtle gameable logic that only
 fires at runtime is *not* statically decidable — that's the delivery-stage gate.)
+
+**Security content scan** (`check_security.py`, area `anti_cheat`): the statically-
+decidable half of Reflection's "Security and anti-cheat" tab, over the **agent-visible**
+files only (`instruction.md` + `environment/` — not `tests/`/`solution/`): **prompt-injection**
+(text telling the agent to ignore the task, reveal the answer/secret, skip the tests, or
+tamper with evaluation), **hidden-unicode** (zero-width / bidi-control / BOM characters
+that hide or reorder text from a reviewer), **obfuscated-payload** (base64/hex piped into
+a shell, `eval`/`exec` of decoded data, `curl|sh`, or a long encoded blob). All WARN —
+review prompts, not proofs (a task may legitimately be *about* injection). Answer/solution
+leakage and reward tampering stay in `check_leakage.py` / `check_reward_hack.py`.
 
 **Verifier defense detector** (`check_verifier_defenses.py`): the deterministic gate
 on Part 3's adversarial cheat-vectors. Reading-only agents can't tell a real exploit
@@ -187,13 +235,13 @@ verify time and must never be COPY'd in. Flag:
 The **reviewer** sub-agent — the single canonical semantic rubric. (For where it
 sits in the pipeline, see [How the parts fit together](#how-the-parts-fit-together).)
 It does **two jobs**, both driven by the [one prompt below](#ready-to-run-reviewer-sub-agent-prompt):
-the **semantic deep-dive** — the five checks in this section — and
+the **semantic deep-dive** — the six checks in this section — and
 **false-positive verification** of Part 1's static flags for this task. ("Semantic
-deep-dive" is just the name for these five checks; it is not a separate pass.)
+deep-dive" is just the name for these six checks; it is not a separate pass.)
 
 It reads `instruction.md`, `tests/` (`test.sh` + `test_outputs.py`),
 `solution/solve.sh`, and `environment/Dockerfile` + setup scripts, then judges the
-five checks below. **Grep the environment for a value before calling a test
+six checks below. **Grep the environment for a value before calling a test
 "phantom," and read the *whole* test file before flagging a single assertion** —
 miscalibration here is the main failure mode.
 
@@ -299,6 +347,34 @@ Calibrate to these bands (use `task-realism`):
 synthetic-by-necessity (benchmarks are scoped), or lacking a narrative. Reserve
 FAIL for tasks that are genuinely contrived, not merely concise.
 
+### Check 6 — Agentic, distractor-free, valid constraints (Reflection)
+
+The semantic-judgment half of Reflection's Quality criteria that no script can
+decide. Default these to **WARN** — they are softer judgments than checks 1–4, so
+reserve any escalation for clear-cut cases (over-calling here costs precision).
+
+- **Non-agentic** (`non-agentic`, WARN) — the task is solvable by a *single command*,
+  a simple transcription, or zero-shot code generation with no exploration,
+  debugging, or multi-step terminal work. Reflection requires *meaningful* terminal
+  interaction. Litmus: *could a competent dev one-shot this without looking at the
+  environment?* If yes → non-agentic. (Don't flag a task that merely *looks* small —
+  judge whether it needs real investigation/iteration.)
+- **Misleading distractor** (`misleading-distractor`, WARN) — extraneous environment
+  content (dead files, decoy configs, red-herring code) that would actively *mislead*
+  the agent, **unless** the task is explicitly designed and reviewed as an
+  instruction-alignment / distractor task. Incidental unused files are not distractors.
+- **Arbitrary constraint** (`arbitrary-constraint`, WARN) — a formatting, precision,
+  tool-use, or process constraint that doesn't reflect a real requirement or prevent
+  cheating, and looks added *only* to inflate difficulty (e.g. "use exactly 3 spaces",
+  "you must use awk", "round to 7 decimals" with no reason). This is the inverse of
+  over-specification: over-spec hands over the *solution*; an arbitrary constraint adds
+  a *pointless hoop*. A constraint that genuinely prevents a shortcut is valid, not
+  arbitrary.
+- **Uncalibrated tolerance** (`uncalibrated-tolerance`, WARN) — a numeric tolerance,
+  similarity threshold, fuzzy match, or range assertion that isn't justified, so it
+  either rejects correct alternative solutions (too tight) or passes wrong ones (too
+  loose). Confirm a correct solution lands inside it and a plausible wrong one doesn't.
+
 ### False-positive rules (check BEFORE flagging)
 
 1. **Anti-shortcut guards are PASS, not WARN.** A grep/source check that sits
@@ -327,7 +403,7 @@ FAIL for tasks that are genuinely contrived, not merely concise.
 
 ### Ready-to-run reviewer sub-agent prompt
 
-This agent does **two jobs at once** — the five checks above, and false-positive
+This agent does **two jobs at once** — the six checks above, and false-positive
 verification of Part 1's flags for the same task (they cost one agent together). The
 prompt is deliberately verbose so the sub-agent needs no other context.
 
@@ -340,7 +416,7 @@ tested on new tasks; do not thin it out.
 > `solution/`, and `environment/Dockerfile` + setup scripts. Its Part-1 static QC
 > findings: `<STATIC_FINDINGS_JSON>`.
 >
-> **(A) The five semantic checks (the "semantic deep-dive").** Emit one finding per
+> **(A) The six semantic checks (the "semantic deep-dive").** Emit one finding per
 > issue and one PASS `*-ok` per clean area. A generic "looks fine" is not an answer —
 > cite the file/line behind every verdict.
 > 1. **Instruction↔verifier alignment.** Every hard requirement has ≥1 test, and
@@ -400,6 +476,22 @@ tested on new tasks; do not thin it out.
 >    - **Do not hallucinate unrealism** — don't penalize a task for being small,
 >      synthetic-by-necessity, or lacking a narrative. Reserve FAIL for genuinely
 >      contrived, not merely concise.
+> 6. **Agentic / valid-constraints** (all WARN — softer judgments; don't over-call).
+>    - `non-agentic` — solvable by a single command / transcription / zero-shot codegen
+>      with no exploration or multi-step work. Litmus: *could a dev one-shot this without
+>      reading the env?* (Judge whether it needs real investigation, not whether it looks
+>      small.)
+>    - `misleading-distractor` — extraneous env content that would actively mislead the
+>      agent, UNLESS the task is explicitly a reviewed instruction-alignment/distractor
+>      task. Incidental unused files don't count.
+>    - `arbitrary-constraint` — a formatting/precision/tool/process constraint with no
+>      real purpose and no anti-cheat value, added only to inflate difficulty ("use
+>      exactly 3 spaces", "must use awk"). The inverse of over-spec. A constraint that
+>      genuinely blocks a shortcut is valid.
+>    - `uncalibrated-tolerance` — a numeric tolerance / fuzzy-match / range assertion
+>      that isn't justified, so it rejects correct alternatives (too tight) or passes
+>      wrong ones (too loose). Confirm a correct solution lands inside and a wrong one
+>      doesn't.
 >
 > Before flagging anything in (A), apply the **false-positive rules**: an
 > anti-shortcut grep *alongside* an outcome test is PASS not WARN; discoverable
@@ -486,6 +578,11 @@ pass surfaces the candidate pre-run.
 - **Tamper with the scoring path** — overwrite/monkeypatch the verifier or its
   helpers, write the reward/score file, or force the exit code (pairs with Part 1's
   `agent-writable-reward-signal` / `unconditional-reward`).
+- **Intercept via PATH / fake wrapper** — prepend a dir to `PATH`, or drop a fake
+  binary/wrapper, so a tool the verifier shells out to (the program under test, a
+  checker, `python`) is replaced with one that returns the expected result; or
+  monkey-patch a library the verifier imports. (Reflection's named shortcuts:
+  replacing tools, fake wrappers, PATH interception, modifying the test harness.)
 - **Overwrite an in-image grader/reference** — if a grading script (`verify.py`,
   `grader.sh`) or an integrity reference (`.orig` backup, `.sha256`) lives in
   agent-writable space and the verifier invokes/compares against it, replace it with
@@ -527,7 +624,8 @@ PASS `cheat-vector-ok`.
 >
 > Work through the hack classes: hardcode checked literals, write the inspected
 > artifact directly, stub the called surface, exploit weak assertions, detect the
-> harness and branch, tamper with the scoring path, overwrite any in-image
+> harness and branch, tamper with the scoring path, intercept a tool the verifier
+> calls via PATH / a fake wrapper / a monkey-patched library, overwrite any in-image
 > grader/reference the verifier invokes (when you are root and it is not under
 > `tests/`), echo any leaked ground truth. For each, decide concretely whether it
 > would PASS `tests/`.
@@ -558,12 +656,27 @@ PASS `cheat-vector-ok`.
 
 ## Part 4 — Dataset-level
 
-- **Decontamination** — compare each instruction to the public-benchmark corpus
-  (`data/decontam_corpus.jsonl`: Terminal-Bench + SWE-bench + LiveCodeBench + Aider,
-  the four NVIDIA names) by similarity; high similarity ⇒ possible contamination /
-  trivially searchable. Rebuild with `skills/static-semantic-qc/scripts/build_decontam_corpus.py`.
-- **Near-duplicate / template reuse** — high pairwise similarity *within* a
-  delivery ⇒ low diversity.
+- **Decontamination** (`decontaminate.py`) — compare each instruction to the
+  public-benchmark corpus (`data/decontam_corpus.jsonl`: Terminal-Bench + SWE-bench +
+  LiveCodeBench + Aider, the four NVIDIA names) by similarity; high similarity ⇒ possible
+  contamination / trivially searchable. Rebuild with
+  `skills/static-semantic-qc/scripts/build_decontam_corpus.py`.
+- **Near-duplicate / template reuse** (`decontaminate.py`) — high pairwise similarity
+  *within* a delivery ⇒ low diversity. Reflection requires pairwise cosine **< 0.90
+  (all-MiniLM-L6-v2)** across **three** artifacts, so all three are checked:
+  `near-duplicate-in-set` (instruction.md, at the tuned 0.6 sensitivity),
+  `near-duplicate-solve` (solve.sh), `near-duplicate-test` (test_outputs.py) — the last
+  two at Reflection's 0.90 bar. Use `--method embed` for the embedding cosine
+  methodology NVIDIA/Reflection specify.
+- **Diversity distribution** (`check_diversity.py`) — Reflection's dataset-level
+  taxonomy constraints, checked once over a whole delivery and attributed to the
+  synthetic `__dataset__` row (plus a `diversity-report.md`): no category >20% of tasks
+  (`category-over-represented`) and none <5% (`category-under-represented`); no
+  subcategory >20% (`subcategory-over-represented`); each assigned `task_objective` label
+  ≥10% coverage (`task-objective-under-represented`) and each `artifact_type` label ≥5%
+  (`artifact-type-under-represented`); plus the avg@8 difficulty distribution.
+  Under-representation/coverage floors only fire at/above `--min-tasks` (default 20) —
+  small samples can't be assessed; over-representation is always reported.
 
 ---
 
@@ -639,5 +752,22 @@ siblings (e.g. `junior-time-out-of-range`, `nonpositive-expert-time`,
 `instruction-placeholder`, `instruction-too-short`, `instruction-empty`,
 `dockerfile-entrypoint`, `test-deps-in-image`, `secret-baked-in-image`,
 `verifier-defended`, `verifier-undefended`, `agent-writable-verifier`,
-`degenerate-integrity-guard`, `test-sh-set-e-reward-abort`. Append `*-ok`
+`degenerate-integrity-guard`, `test-sh-set-e-reward-abort`,
+`missing-subcategory`, `missing-task-objective`, `unknown-task-objective`,
+`missing-artifact-type`, `unknown-artifact-type`, `avg-at-8-too-easy`,
+`missing-avg-at-8`, `missing-model-tested`, `model-tested-not-approved`,
+`missing-agent-tested`, `agent-tested-not-approved`, `missing-build-timeout`,
+`nonpositive-build-timeout`, `placeholder-zero-resource`,
+`base-image-not-digest-pinned`, `base-image-not-approved`, `apt-not-consolidated`,
+`apt-get-upgrade`, `missing-multistage-build`, `broad-chmod`,
+`dockerfile-heredoc-source`, `archive-fixture-not-extracted`, `missing-dockerignore`,
+`instruction-too-long`, `instruction-relative-path`, `test-runtime-install`,
+`reward-path-nonstandard`, `reward-pre-created`, `task-name-not-kebab`,
+`task-name-too-long`, `unnecessary-files`, `crlf-line-endings`, `non-text-asset`,
+`prompt-injection`, `hidden-unicode`, `obfuscated-payload`, `near-duplicate-solve`,
+`near-duplicate-test`, `category-over-represented`, `category-under-represented`,
+`subcategory-over-represented`, `task-objective-under-represented`,
+`artifact-type-under-represented`, `non-agentic`, `misleading-distractor`,
+`arbitrary-constraint`, `uncalibrated-tolerance`, `difficulty-too-easy`,
+`avg-at-8-mismatch`. Append `*-ok`
 (e.g. `tests-ok`) for clean PASS findings.

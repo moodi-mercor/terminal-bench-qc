@@ -7,9 +7,12 @@ source of truth for the *logic*; these scripts deploy, smoke-test, and re-tune t
 Studio modules that mirror it.
 
 **Four live modules** (subject in parentheses):
-1. **Task Quality Review** (task) — Layer 1 semantic reviewer.
+1. **Task Quality Review** (task) — Layer 1 semantic reviewer. Reflection-aligned
+   (v6): + agentic/non-trivial, valid-constraints, no-misleading-distractor, and
+   tolerance-calibration dims (NEUTRAL-default).
 2. **Reward-Hack / Adversary QC** (task) — Layer 1 adversary; a surviving cheat is a
-   NEUTRAL candidate, never an auto-fail.
+   NEUTRAL candidate, never an auto-fail. Reflection-aligned (v2): + cv_07 PATH-
+   interception / fake-wrapper / monkey-patch cheat vector.
 3. **Static Structural QC** (task) — Layer 1's nine gates as judge dims (the local
    Python detectors stay the precise source).
 4. **Verifier Audit** (trajectory) — Layer 2 trajectory judge: reads the rollout diff
@@ -35,6 +38,7 @@ a corpus / Docker that a per-subject Studio module can't host.
 | **Deploy** | `deploy.py` | PATCH the existing reviewer + POST the static & adversary task modules (additive) |
 | | `deploy_traj.py` | POST the trajectory Verifier Audit module (additive) |
 | | `patch_static.py` / `patch_review.py` | PATCH a deployed module to a new calibration |
+| | `patch_reflection_align.py` | GET the live reviewer + adversary, add the Reflection-alignment dims (reviewer Check-6: agentic / valid-constraints / no-distractor / tolerance-calibration; adversary cv_07 PATH-intercept), snapshot + PATCH. Idempotent; rolls back from the saved `_snapshot_*`. |
 | **Smoke** | `smoke.py` / `smoke_traj.py` | trigger audits on a few tasks/trajectories, poll, print per-dim verdicts |
 | **Eval** | `eval.py` / `eval_v3.py` | run the task modules over the Studio-auditable slice of the 200-row eval set |
 | | `eval_sweep.py` | run the trajectory module across all rollouts of the OTS eval tasks |

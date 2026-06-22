@@ -15,7 +15,7 @@ Work in three phases.
 
 **Phase 2 — Read.** Read `instruction.md`, the full `tests/` files (read the *whole* test file — never flag a single assertion without reading the rest), `solution/solve.sh`, and the Dockerfile + setup scripts. Grep the environment for any value before you reason about it.
 
-**Phase 3 — Assess the five dimensions below.** Emit a per-dimension verdict with evidence: cite the file and line behind every verdict. A generic "looks fine" is not acceptable.
+**Phase 3 — Assess the six dimensions below.** Emit a per-dimension verdict with evidence: cite the file and line behind every verdict. A generic "looks fine" is not acceptable.
 
 ---
 
@@ -57,6 +57,15 @@ Does the instruction describe a workflow a real engineer would plausibly be assi
 - **FAIL** — no real-world analog (an invented puzzle/cipher with no motivation, unless the category is explicitly puzzles), a workflow no dev would do ("hand-edit this binary at offset 0x1F"), or an internally implausible scenario.
 - **Do not hallucinate unrealism** — don't penalize a task for being small, synthetic-by-necessity, or lacking a narrative. Reserve FAIL for genuinely contrived, not merely concise.
 
+## Dimension 6 — Agentic, distractor-free, valid constraints
+
+The softer judgment calls from Reflection's Quality criteria. These are **note/NEUTRAL-level by default** — do NOT escalate to FAIL unless the violation is clear-cut and material (over-calling here costs precision).
+
+- **non-agentic** (note) — the task is solvable by a *single command*, a simple transcription, or zero-shot codegen with no exploration, debugging, or multi-step terminal work. Litmus: *could a competent dev one-shot this without reading the environment?* If yes → non-agentic. Judge whether it needs real investigation, not whether it merely *looks* small.
+- **misleading-distractor** (note) — extraneous environment content that would actively *mislead* the agent, UNLESS the task is explicitly a reviewed instruction-alignment / distractor task. Incidental unused files are not distractors.
+- **arbitrary-constraint** (note) — a formatting/precision/tool-use/process constraint with no real requirement and no anti-cheat value, added only to inflate difficulty ("use exactly 3 spaces", "you must use awk", "round to 7 decimals" for no reason). The inverse of over-specification. A constraint that genuinely blocks a shortcut is valid, not arbitrary.
+- **uncalibrated-tolerance** (note; FAIL only if it clearly admits wrong answers) — a numeric tolerance / similarity threshold / fuzzy match / range assertion that isn't justified, so it rejects correct alternative solutions (too tight) or passes wrong ones (too loose). Confirm a correct solution lands inside it and a plausible wrong one doesn't.
+
 ---
 
 ## False-positive rules — apply BEFORE flagging anything
@@ -79,6 +88,6 @@ Does the instruction describe a workflow a real engineer would plausibly be assi
 
 ---
 
-For each dimension emit a verdict (PASS / FAIL / NEUTRAL), the stable defect title where it applies, the file:line evidence, and a one-line fix. Never force a dimension to NEUTRAL/PASS to be safe — make the criterion precise instead. Do not invent dimensions beyond these five.
+For each dimension emit a verdict (PASS / FAIL / NEUTRAL), the stable defect title where it applies, the file:line evidence, and a one-line fix. Never force a dimension to NEUTRAL/PASS to be safe — make the criterion precise instead. Do not invent dimensions beyond these six.
 
 <!-- If Layer-1 static findings are later fed in via a Pipeline Run subject, reattach job (B): for each static FAIL/WARN, try to refute it and emit verify-refuted / verify-confirm. Omitted here because static stays offline. -->

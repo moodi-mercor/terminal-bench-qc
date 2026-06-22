@@ -15,7 +15,7 @@ structurally cannot, and each is a self-contained skill you can run on its own.
 
 | Layer | Skill | Question | Catches | Runs |
 |---|---|---|---|---|
-| **1 · Static + Semantic** | [`skills/static-semantic-qc`](skills/static-semantic-qc/SKILL.md) | *what shape is this, and is it correct?* | missing files, bad metadata, leaked answers, vacuous tests, fragile `solve.sh` (static); unfair/brittle verifiers, instruction↔test mismatch, reward hacks (semantic) | reads files — 9 deterministic gates + reviewer/adversary sub-agents |
+| **1 · Static + Semantic** | [`skills/static-semantic-qc`](skills/static-semantic-qc/SKILL.md) | *what shape is this, and is it correct?* | missing files, bad metadata, leaked answers, vacuous tests, fragile `solve.sh`, Dockerfile/base-image + diversity + difficulty (avg@8) + security checks (static); unfair/brittle verifiers, instruction↔test mismatch, reward hacks (semantic) | reads files — 10 deterministic gates + reviewer/adversary sub-agents |
 | **2 · Trajectory** | [`skills/trajectory-audit`](skills/trajectory-audit/SKILL.md) | *what happened when models actually ran it?* | verifiers too strict (fail correct work), too weak (pass cheats), confirmed against real rollouts | reads a completed Studio eval batch — triage + judge sub-agents |
 | **3 · Behavioral** | [`skills/behavioral-qc`](skills/behavioral-qc/SKILL.md) | *does it actually run right?* | a **no-op passes**, a **broken oracle** (reference fails its own tests) | **runs the task** in Docker (opt-in, `--execute`) |
 

@@ -4,12 +4,14 @@ description: >-
   Quality-control Terminal-Bench OTS tasks before delivery and flag defects
   across a dataset. Use when asked to QC, review, audit, or find defects in
   Terminal-Bench / TB2 tasks, check for leakage or brittle verifiers, or measure
-  defect rate and distribution across a task set. Runs nine deterministic static
-  gates first (structure, metadata, Dockerfile reproducibility, instructions,
-  leakage, reward-hack, env-fairness, portability, verifier-defense), then a
-  per-task semantic review plus an adversarial reward-hack pass, plus
-  dataset-level decontamination, and aggregates into an SSOT + defect-distribution
-  report. Precision/recall are tuned against a labeled eval set (real public
+  defect rate and distribution across a task set. Runs ten deterministic static
+  gates first (structure+hygiene, metadata, Dockerfile reproducibility+structuring,
+  instructions, leakage, reward-hack, env-fairness, portability, verifier-defense,
+  security), then a per-task semantic review plus an adversarial reward-hack pass,
+  plus dataset-level decontamination and diversity-distribution checks, and
+  aggregates into an SSOT + defect-distribution report. Metadata is schema-tolerant
+  (TB2/OTS and Reflection's Harbor schema, incl. the avg@8 ≤ 0.5 difficulty bar,
+  base-image allowlist, and task-objective/artifact-type taxonomy). Precision/recall are tuned against a labeled eval set (real public
   TerminalBench tasks as the clean baseline). Behavioral oracle/no-op validation
   is a separate delivery-stage gate and is out of scope here. Built from
   cross-client feedback (NVIDIA, MAI, GDM, Reflection).
@@ -65,27 +67,28 @@ schema (`../../shared/common.py`) and aggregate into one SSOT via `../../shared/
 
 | Part | What it checks | How | Entry point |
 |---|---|---|---|
-| **1 · Static** | required files, metadata, Dockerfile reproducibility, instruction heuristics, leakage/anti-cheat, reward-hack, env-fairness, portability, verifier-defense — **9 deterministic gates** (below) | python scripts | `run_static_qc.py` |
+| **1 · Static** | required files+hygiene, metadata, Dockerfile reproducibility+structuring, instruction heuristics, leakage/anti-cheat, reward-hack, env-fairness, portability, verifier-defense, security — **10 deterministic gates** (below) | python scripts | `run_static_qc.py` |
 | **2 · Semantic review** | instruction↔test alignment, brittle/phantom/weak tests, over-spec, golden-patch, realism | reviewer sub-agent, one per task | dispatch agents |
 | **3 · Adversarial** | reward-hack red-team — can the verifier be gamed without doing the work? | adversary sub-agent, one per task | dispatch agents |
 | **4 · Dataset** | decontamination vs public benchmarks, near-duplicates, diversity, difficulty | python scripts | `decontaminate.py` |
 
-### Part 1 — the nine static gates (`run_static_qc.py`)
+### Part 1 — the ten static gates (`run_static_qc.py`)
 
 Cheapest first; each emits the shared findings schema and is precision-tuned
 against the eval set.
 
 | Gate | Catches |
 |---|---|
-| `check_structure` | missing/empty required files; no-`FROM`/trivial Dockerfile |
-| `check_metadata` | missing/garbage metadata; seconds-as-minutes time smell; over-broad category/tags; resource-cap violations; internet-flag vs instruction contradiction |
-| `check_dockerfile` | reproducibility smells: unpinned base image, `apt` without update, unpinned `pip`, `ADD <url>`, `curl\|sh` (all WARN) |
-| `check_instructions` | leftover placeholders (TODO/FIXME/lorem); too-short/empty instruction |
+| `check_structure` | missing/empty required files; no-`FROM`/trivial Dockerfile; **package hygiene** — non-kebab/over-long task name, stale/cache/VCS files, CRLF line endings, non-text doc assets |
+| `check_metadata` | **schema-tolerant** (TB2/OTS + Reflection Harbor): missing/garbage metadata; seconds-as-minutes time smell; over-broad category/tags; resource-cap + placeholder-zero violations; internet-flag vs instruction contradiction; **Reflection** — subcategory/objective/artifact taxonomy, model/agent_tested, build-timeout, and the **avg@8 ≤ 0.5 difficulty bar** (FAIL if too easy) |
+| `check_dockerfile` | reproducibility + **structuring** (all WARN): unpinned/undigested/**non-approved base image**, `apt` without update, **apt not consolidated**, **apt upgrade**, unpinned `pip`, `ADD <url>`, `curl\|sh`, **missing multi-stage** for compiled artifacts, **broad `chmod -R`**, **heredoc source**, **opaque `.tar.gz` fixture**, **missing `.dockerignore`** |
+| `check_instructions` | leftover placeholders (TODO/FIXME/lorem); too-short/empty; **too-long (>~1500 tokens)**; **relative paths** (Reflection wants absolute) |
 | `check_leakage` | `solution/` or `tests/` COPY'd into the image; truth baked to an agent-visible path the verifier reads; reference `solve.sh` that reads the answer instead of producing it; hint files |
-| `check_reward_hack` | vacuous/no-assertion/existence-only tests; swallowed assertions; `pytest \|\| true`; unconditional/agent-writable reward; verifier importing the solution; **agent-writable in-image grader the verifier invokes**; skipped/empty-parametrized scored tests; **`set -e`-aborts-before-reward** |
+| `check_reward_hack` | vacuous/no-assertion/existence-only tests; swallowed assertions; `pytest \|\| true`; unconditional/agent-writable reward; verifier importing the solution; **agent-writable in-image grader the verifier invokes**; skipped/empty-parametrized scored tests; **`set -e`-aborts-before-reward**; **runtime install in `test.sh`**; **non-standard reward path**; **pre-created reward** |
 | `check_env_fairness` | leftover generators/setup scripts; git-history exposure; verifier hitting the network |
 | `check_portability` | solve/test robustness: backgrounded-daemon-no-redirect, PEP-668 pip, server-not-started, broad `pkill`, systemd/entrypoint assumptions |
 | `check_verifier_defenses` | verifier with no anti-cheat defense (mutated-rerun / recompute / source-grep / re-exec). A PASS `verifier-defended` deterministically suppresses adversary cheat-vectors against it; `verifier-undefended` (WARN) flags a literal-only verifier as gameable; **a degenerate in-image integrity guard (`sha256sum -c`/`cmp` vs a baked ref, agent root) no longer counts as a defense** |
+| `check_security` | agent-visible **prompt-injection** ("ignore the task / reveal the answer / skip the tests"), **hidden/bidi Unicode**, **obfuscated payloads** (base64\|sh, eval/exec of decoded data) — all WARN |
 
 ## How to run
 
@@ -107,9 +110,10 @@ Writes per-gate findings JSON plus the SSOT and distribution reports into `qc_ou
 The reviewer and adversary criteria + ready-to-run prompts are in
 [`QC_GUIDE.md`](../../QC_GUIDE.md) (Parts 2–3). Each writes one JSON file to `qc_out/`:
 
-- **Reviewer** → `sem_<task>.json` — the 5 semantic checks (instruction↔verifier
-  alignment, coverage, hygiene, golden-patch, realism) plus false-positive
-  verification of this task's static flags (`verify-refuted` / `verify-confirm`).
+- **Reviewer** → `sem_<task>.json` — the 6 semantic checks (instruction↔verifier
+  alignment, coverage, hygiene, golden-patch, realism, agentic/valid-constraints)
+  plus false-positive verification of this task's static flags
+  (`verify-refuted` / `verify-confirm`).
 - **Adversary** → `adv_<task>.json` — a separate reward-hack red-team. A surviving
   hack is a `semantic-cheat-vector` **WARN candidate** (not a verdict), promoted to
   FAIL only after confirmation.
@@ -165,23 +169,31 @@ defect), then improve precision.
 
 ```bash
 python scripts/decontaminate.py tasks_cache --out qc_out/findings_dataset.json
+python scripts/check_diversity.py tasks_cache --out qc_out/findings_diversity.json
 ```
 
-- **Decontamination vs public benchmarks** — scores each task instruction against
-  the public-benchmark corpus (`data/decontam_corpus.jsonl`, **1,256 instructions**
-  spanning the four benchmarks NVIDIA names: Terminal-Bench (244),
+- **Decontamination vs public benchmarks** (`decontaminate.py`) — scores each task
+  instruction against the public-benchmark corpus (`data/decontam_corpus.jsonl`,
+  **1,256 instructions** spanning the four benchmarks NVIDIA names: Terminal-Bench (244),
   SWE-bench_Verified (500), LiveCodeBench (287), Aider polyglot (225)) by TF-IDF
   cosine; high similarity ⇒ possible contamination / trivially searchable.
   `--method embed` swaps in sentence-embedding cosine (the methodology
   NVIDIA/Reflection ask for; needs `pip install sentence-transformers`). Rebuild
   the corpus with `build_decontam_corpus.py`.
-- **Near-duplicate / template reuse** — the same script flags high pairwise
+- **Near-duplicate / template reuse** (`decontaminate.py`) — flags high pairwise
   similarity *within* the set (GDM found 69 cross-delivery overlaps; Reflection
-  flagged template concentration).
-- **Diversity levers** — category/language/type, instruction length/constraints,
-  environment size/deps — balanced, not concentrated in one shape.
-- **Difficulty distribution** reported; bar enforced where contracted (e.g.
-  pass@8 ≤ 0.5 on the harder model; TB3 ≤ 0.30).
+  flagged template concentration). Reflection's bar is pairwise cosine **< 0.90
+  (all-MiniLM-L6-v2)** across **three** artifacts — `instruction.md`,
+  `solution/solve.sh`, `tests/test_outputs.py` — so all three are checked.
+- **Diversity distribution** (`check_diversity.py`) — Reflection's taxonomy
+  constraints over the whole delivery: no category >20% / <5%, no subcategory >20%,
+  each `task_objective` label ≥10% coverage, each `artifact_type` label ≥5%. Findings
+  attach to a synthetic `__dataset__` SSOT row; a human-readable `diversity-report.md`
+  lists the full category/subcategory/objective/artifact mix. Under-representation
+  floors only assess at/above `--min-tasks` (default 20).
+- **Difficulty distribution** — `check_diversity.py` reports the avg@8 distribution
+  (share meeting the ≤ 0.5 bar); the per-task bar (`avg-at-8-too-easy` FAIL when
+  `avg_at_8 > 0.5`) is enforced in `check_metadata.py`.
 
 > **Corpus note:** `data/decontam_corpus.jsonl` is a similarity reference (one
 > `{name, source, instruction}` row per public-benchmark task), **not** an input to

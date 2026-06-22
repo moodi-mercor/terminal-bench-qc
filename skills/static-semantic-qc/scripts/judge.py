@@ -11,7 +11,7 @@ For each task it inlines the task files (instruction, tests, solve.sh, Dockerfil
 task.toml) into the prompt — the model cannot browse, so everything it needs is in
 the message — applies the committed rubric (`prompts/tb-task-qc-{reviewer,adversary}-v1.md`),
 and writes the finding JSON to `qc_out/`:
-  - reviewer  -> sem_<task>.json   (the 5 semantic dims + verify-refuted/confirm of static flags)
+  - reviewer  -> sem_<task>.json   (the 6 semantic dims + verify-refuted/confirm of static flags)
   - adversary -> adv_<task>.json   (a surviving cheat is a WARN candidate, never an auto-FAIL)
 
 These aggregate through `../../shared/aggregate.py` + `../../shared/gate.py` like every

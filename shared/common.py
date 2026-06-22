@@ -291,6 +291,21 @@ def get(d, dotted, default=None):
     return cur
 
 
+# Reflection-only task.toml keys — their presence marks a Harbor/Reflection-schema
+# task (vs the older TB2/OTS shape). Detectors use this to apply Harbor-specific
+# conventions (base-image allowlist, digest pinning, no-runtime-install-in-tests,
+# the /logs/verifier/reward.txt reward path) ONLY to Reflection deliveries, so legacy
+# OTS tasks aren't blanketed with WARNs for rules they aren't held to.
+def is_reflection_schema(d):
+    md = get(d, "metadata") or {}
+    if not isinstance(md, dict):
+        md = {}
+    refl_keys = ("task_objective", "artifact_type", "model_tested",
+                 "agent_tested", "avg_at_8", "expert_time_estimate_hours")
+    return (any(k in md for k in refl_keys)
+            or get(d, "environment.build_timeout_sec") is not None)
+
+
 if __name__ == "__main__":
     # tiny self-test
     sample = '''

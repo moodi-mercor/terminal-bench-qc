@@ -31,6 +31,9 @@ PASS, WARN, FAIL = _schema.PASS, _schema.WARN, _schema.FAIL
 SEV_RANK, AREAS = _schema.SEV_RANK, _schema.AREAS
 worst, finding, emit = _schema.worst, _schema.finding, _schema.emit
 AREA_LAYER, layer_of = _schema.AREA_LAYER, _schema.layer_of
+# task-tree helpers (used by difficulty.py to read recorded avg_at_8 from task.toml)
+discover_tasks, task_paths = _schema.discover_tasks, _schema.task_paths
+load_toml, get, read_text = _schema.load_toml, _schema.get, _schema.read_text
 
 # ----------------------------------------------------------------- config ---
 API = os.environ.get("STUDIO_API", "https://api.studio.mercor.com")
