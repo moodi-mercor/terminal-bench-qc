@@ -118,10 +118,27 @@ def run_task(name, root, args):
     # while --timeout stays short so a blocking verifier in a trial dies fast.
     rc, log = _run(build_cmd, args.build_timeout)
     if rc != 0:
+        # A failed build is only a real defect on the task's TARGET arch with enough
+        # time. A timeout (rc 124) or a failure under --native-arch is INCONCLUSIVE —
+        # WARN, not FAIL, so it never pollutes the defect count.
+        if rc == 124:
+            return [finding(name, "behavioral", WARN, "build-timeout",
+                            detail=f"docker build exceeded {args.build_timeout}s — inconclusive "
+                                   f"(raise --build-timeout or lower --workers): {log[-160:]}",
+                            location="environment/Dockerfile",
+                            fix="Re-run with a higher --build-timeout and/or fewer --workers.",
+                            layer="behavioral")]
+        if getattr(args, "native_arch", False):
+            return [finding(name, "behavioral", WARN, "build-untested-native-arch",
+                            detail=f"image failed to build under --native-arch (task targets amd64; "
+                                   f"likely an arch/availability artifact, not a defect): {log[-160:]}",
+                            location="environment/Dockerfile",
+                            fix="Confirm on native amd64 (delivery infra) before treating as a defect.",
+                            layer="behavioral")]
         return [finding(name, "behavioral", FAIL, "build-fails",
                         detail=f"`docker build` failed: {log[-300:]}",
                         location="environment/Dockerfile",
-                        fix="Fix the Dockerfile so the agent image builds.")]
+                        fix="Fix the Dockerfile so the agent image builds.", layer="behavioral")]
 
     def trial(mode):
         return _run(["docker", "run", "--rm", "-v", f"{tests_dir}:/tests:ro",

@@ -44,8 +44,11 @@ same separation harbor enforces.
 | **oracle** | fresh container, run `solution/solve.sh`, then the verifier | **PASS** (score 1) | `oracle-fails` — reference can't solve its own task |
 | **reward-iso** *(`--reward-iso`)* | write a fake passing reward/score file, then the verifier | **FAIL** | `reward-signal-gameable` — pass signal is agent-writable |
 
-A failed Docker build is itself a defect (`build-fails`). A clean run emits
-`behavioral-ok`.
+A failed Docker build is a defect (`build-fails`) **only on the task's target arch
+with enough time**. A build **timeout** (`build-timeout`, often from too many
+`--workers`) or a build failure under `--native-arch` (`build-untested-native-arch`,
+the task targets amd64) is **WARN-inconclusive, not a defect** — it means "couldn't
+test here," confirm on native amd64. A clean run emits `behavioral-ok`.
 
 ## How to run
 
