@@ -258,19 +258,22 @@ def check_task(name, root):
                                    location="task.toml [metadata]",
                                    fix="Recalibrate to the difficulty range (minutes)."))
 
-    # ---- difficulty bar + benchmarking metadata (Reflection) ----
+    # ---- difficulty bar + benchmarking metadata (Reflection delivery only) ----
+    # The avg@8 ≤ 0.5 bar is Reflection-specific, so it only applies to Reflection-
+    # schema tasks (a task that records avg_at_8 is Reflection-shaped by definition).
+    # General OTS QC never enforces it.
     avg = _num(get(d, "metadata.avg_at_8"))
     model_tested = get(d, "metadata.model_tested")
     agent_tested = get(d, "metadata.agent_tested")
-    if avg is not None and avg > AVG_AT_8_MAX:
-        out.append(finding(name, "metadata", FAIL, "avg-at-8-too-easy",
-                           detail=f"avg_at_8={avg} exceeds the difficulty bar "
-                                  f"(must be ≤ {AVG_AT_8_MAX}); the frontier model solves it "
-                                  "too often, so the task is too easy.",
-                           location="task.toml [metadata]",
-                           fix="Make the task harder, or replace it; re-benchmark avg@8 with "
-                               "Terminus-2 on Opus-4.8/GPT-5.4."))
     if reflection:
+        if avg is not None and avg > AVG_AT_8_MAX:
+            out.append(finding(name, "metadata", FAIL, "avg-at-8-too-easy",
+                               detail=f"avg_at_8={avg} exceeds the difficulty bar "
+                                      f"(must be ≤ {AVG_AT_8_MAX}); the frontier model solves it "
+                                      "too often, so the task is too easy.",
+                               location="task.toml [metadata]",
+                               fix="Make the task harder, or replace it; re-benchmark avg@8 with "
+                                   "Terminus-2 on Opus-4.8/GPT-5.4."))
         if avg is None:
             out.append(finding(name, "metadata", WARN, "missing-avg-at-8",
                                detail="metadata.avg_at_8 missing — Reflection requires a "

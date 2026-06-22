@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """Stage 2b — EMPIRICAL difficulty (avg@8) from the batch scores. NO model in the loop.
 
+REFLECTION-DELIVERY OPT-IN. The avg@8 difficulty bar is Reflection-specific, not part
+of general trajectory triage — run this only when prepping/auditing a Reflection
+delivery. It is a standalone script, separate from the default triage pipeline.
+
 Reflection's difficulty bar is **avg@8 ≤ 0.5** on a frontier model (Opus 4.8 / GPT-5.4)
 run with Terminus-2. The static Layer-1 gate (`check_metadata.py:avg-at-8-too-easy`)
 only *reads* the `avg_at_8` recorded in `task.toml` — it trusts the number. This stage

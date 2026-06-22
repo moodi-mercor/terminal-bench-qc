@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """Dataset-level diversity constraints (deterministic, read-only).
 
+REFLECTION-DELIVERY OPT-IN. The distribution limits below are Reflection's dataset
+contract, not part of general OTS QC — run this only when prepping a Reflection
+delivery. It is a standalone script, never part of the default run_static_qc gates.
+
 Reflection's "Diversity" tab is a DATASET-level contract, not per-task — so this runs
 once over a whole delivery and checks the distributional constraints against the
 taxonomy labels recorded in each task.toml:

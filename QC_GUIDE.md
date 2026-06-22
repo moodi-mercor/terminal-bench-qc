@@ -656,6 +656,11 @@ PASS `cheat-vector-ok`.
 
 ## Part 4 — Dataset-level
 
+Decontamination + the instruction near-dup are **general** (always useful). The
+**diversity distribution** and the **0.90 cross-artifact (solve.sh/test_outputs.py)
+near-dup** are **Reflection-delivery opt-in** — `decontaminate.py --reflection` and
+`check_diversity.py`, run only when prepping a Reflection delivery, not part of default OTS QC.
+
 - **Decontamination** (`decontaminate.py`) — compare each instruction to the
   public-benchmark corpus (`data/decontam_corpus.jsonl`: Terminal-Bench + SWE-bench +
   LiveCodeBench + Aider, the four NVIDIA names) by similarity; high similarity ⇒ possible

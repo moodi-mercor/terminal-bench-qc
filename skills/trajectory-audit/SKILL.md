@@ -77,7 +77,8 @@ python scripts/pull_batch.py batch_c5e617e48b0f41eaa13337976014e396 --out audit_
 python scripts/triage.py audit_out/attempts.jsonl --out-dir audit_out
 
 # 2b. empirical difficulty (avg@8 from the scores) -> flag too-easy tasks + metadata
-#     mismatches. Pass --tasks-dir to compare against each task.toml's recorded avg_at_8.
+#     mismatches. REFLECTION-DELIVERY OPT-IN (the avg@8 bar is Reflection-specific).
+#     Pass --tasks-dir to compare against each task.toml's recorded avg_at_8.
 python scripts/difficulty.py audit_out/attempts.jsonl --out-dir audit_out [--tasks-dir <task-trees>]
 
 # 3. enrich the candidates with per-test detail + diffs, then re-triage

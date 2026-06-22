@@ -147,6 +147,10 @@ def main():
     ap.add_argument("--dup-threshold", type=float, default=0.6)
     ap.add_argument("--strict-dup-threshold", type=float, default=0.90,
                     help="Reflection's pairwise-similarity bar for solve.sh/test_outputs.py")
+    ap.add_argument("--reflection", action="store_true",
+                    help="opt-in: also run Reflection's 0.90 cross-artifact (solve.sh + "
+                         "test_outputs.py) near-dup checks. Off by default — the instruction "
+                         "near-dup check above is the general one.")
     ap.add_argument("--method", choices=["tfidf", "embed"], default="tfidf",
                     help="tfidf (stdlib default) or embed (sentence-transformers cosine)")
     ap.add_argument("--model", default="all-MiniLM-L6-v2",
@@ -251,11 +255,13 @@ def main():
                     location="instruction.md",
                     fix="Confirm the two tasks are meaningfully distinct; dedupe if not."))
 
-    # 2b. solve.sh + test_outputs.py near-duplicates at Reflection's 0.90 bar
-    findings += pairwise_dups(solve_text, q_names, args.strict_dup_threshold,
-                              args.method, args.model, "near-duplicate-solve", "solution/solve.sh")
-    findings += pairwise_dups(test_text, q_names, args.strict_dup_threshold,
-                              args.method, args.model, "near-duplicate-test", "tests/test_outputs.py")
+    # 2b. solve.sh + test_outputs.py near-duplicates at Reflection's 0.90 bar.
+    # Opt-in (Reflection delivery only) — the instruction near-dup above is the general check.
+    if args.reflection:
+        findings += pairwise_dups(solve_text, q_names, args.strict_dup_threshold,
+                                  args.method, args.model, "near-duplicate-solve", "solution/solve.sh")
+        findings += pairwise_dups(test_text, q_names, args.strict_dup_threshold,
+                                  args.method, args.model, "near-duplicate-test", "tests/test_outputs.py")
 
     n_out = emit(findings, args.out)
     fails = sum(1 for f in findings if f["severity"] == FAIL)

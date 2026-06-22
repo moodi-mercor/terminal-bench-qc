@@ -167,8 +167,15 @@ defect), then improve precision.
 
 ## Dataset-level checks (run once across a delivery)
 
+Decontamination + intra-set instruction near-dup are **general**. The **diversity
+distribution** and the **cross-artifact (solve.sh/test_outputs.py) near-dup at 0.90**
+are **Reflection-delivery opt-in** — run them only when prepping a Reflection delivery.
+
 ```bash
+# general: contamination + instruction near-duplicates
 python scripts/decontaminate.py tasks_cache --out qc_out/findings_dataset.json
+# Reflection delivery only: add the 0.90 solve/test near-dup + the diversity distribution
+python scripts/decontaminate.py tasks_cache --reflection --out qc_out/findings_dataset.json
 python scripts/check_diversity.py tasks_cache --out qc_out/findings_diversity.json
 ```
 
