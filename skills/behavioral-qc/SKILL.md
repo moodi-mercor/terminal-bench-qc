@@ -50,6 +50,14 @@ with enough time**. A build **timeout** (`build-timeout`, often from too many
 the task targets amd64) is **WARN-inconclusive, not a defect** — it means "couldn't
 test here," confirm on native amd64. A clean run emits `behavioral-ok`.
 
+**Verifier runtime vs budget (Reflection "Fast enough").** Each trial times *only the
+verifier step* (not `solve.sh`) and compares it to the task's configured
+`verifier.timeout_sec`: `verifier-exceeds-timeout` (**FAIL** — the verifier alone blows
+its budget on the oracle-solved container, so it'd be killed and score even a correct
+solution 0) or `verifier-near-timeout` (**WARN** — within 20% of the budget, little
+headroom). The static pre-run co-signal is `verifier-unbounded-call` (a verifier network
+call with no timeout) in Layer-1 `check_portability`.
+
 ## How to run
 
 This gate is **opt-in and confirm-to-run**. By default it runs **nothing** — it

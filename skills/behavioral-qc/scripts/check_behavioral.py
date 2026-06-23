@@ -47,7 +47,7 @@ import tempfile
 import threading
 
 from common import (FAIL, PASS, WARN, finding, emit,
-                    discover_tasks, task_paths, read_text)
+                    discover_tasks, task_paths, read_text, load_toml, get)
 
 
 def _docker_ok():
@@ -80,8 +80,21 @@ def _trial_cmd(mode, wd, verifier):
     if mode == "reward-iso":
         steps += [f"echo 1 > {wd}/reward.txt; echo 1 > {wd}/score; "
                   f"echo pass > {wd}/status 2>/dev/null || true"]
-    steps += [f"cd {wd} && {verifier}"]
+    # time ONLY the verifier step (not solve.sh) and print its wall-clock, so we can
+    # compare against the configured verifier.timeout_sec ("Fast enough"). `exit $rc`
+    # preserves the verifier's exit code for _verifier_passed.
+    steps += [f"cd {wd} && __vs=$(date +%s); {verifier}; __rc=$?; "
+              f'echo "__VERIFIER_SECS=$(( $(date +%s) - __vs ))"; exit $__rc']
     return " ; ".join(steps)
+
+
+def _verifier_secs(log):
+    m = re.search(r"__VERIFIER_SECS=(\d+)", log or "")
+    return int(m.group(1)) if m else None
+
+
+def _num(v):
+    return v if isinstance(v, (int, float)) and not isinstance(v, bool) else None
 
 
 def plan_task(name, root, args):
@@ -159,6 +172,29 @@ def run_task(name, root, args):
                                   f"the reference doesn't pass its own verifier: {olog[-200:]}",
                            location="solution/solve.sh", fix="Fix solve.sh or the "
                            "verifier/environment so the oracle scores 1.0."))
+    # "Fast enough" (Reflection): the verifier's own runtime must not exceed its
+    # configured budget. We timed just the verifier step on the oracle (full-pass) run.
+    vsecs = _verifier_secs(olog)
+    vto = _num(get(load_toml(p["task.toml"]), "verifier.timeout_sec")) \
+        or _num(get(load_toml(p["task.toml"]), "verifier_timeout"))
+    if vsecs is not None and vto and vto > 0:
+        if vsecs > vto:
+            out.append(finding(name, "behavioral", FAIL, "verifier-exceeds-timeout",
+                               detail=f"verifier ran {vsecs}s on the oracle-solved container — "
+                                      f"over its configured timeout ({vto:g}s). It will be killed "
+                                      "and score the task 0 even on a correct solution.",
+                               location="task.toml [verifier] timeout_sec",
+                               fix="Speed up the verifier or raise verifier.timeout_sec to a "
+                                   "value above the measured runtime (with headroom).",
+                               layer="behavioral"))
+        elif vsecs > 0.8 * vto:
+            out.append(finding(name, "behavioral", WARN, "verifier-near-timeout",
+                               detail=f"verifier ran {vsecs}s — within 20% of its configured "
+                                      f"timeout ({vto:g}s). Little headroom; a slower machine or "
+                                      "a heavier solution may tip it over.",
+                               location="task.toml [verifier] timeout_sec",
+                               fix="Add headroom: speed up the verifier or raise verifier.timeout_sec.",
+                               layer="behavioral"))
     if args.reward_iso:
         rrc, rlog = trial("reward-iso")
         if _verifier_passed(rrc, rlog):

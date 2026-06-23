@@ -17,6 +17,13 @@ solve.sh:
   - mixed-bash-python-solve         : a python shebang on a script run as `bash`.
   - broad-pkill                     : `pkill -f <pattern>` that can match the
         sandbox launcher and kill the run.
+  - solve-embedded-heredoc          : a large heredoc embedded in solve.sh (a source
+        file inlined instead of COPYed) — Reflection's "appropriate decomposition" rule.
+        REFLECTION-GATED: inlining source via heredoc is the dominant pattern in the
+        legacy TB/OTS corpus, so this fires only on Reflection-schema tasks (the ones
+        actually held to the rule), like the base-image / no-runtime-install conventions.
+  - solve-too-long                  : solve.sh is very long — complex helper logic that
+        should live in separate files, not be embedded in solve.sh. Reflection-gated too.
 
 tests / Dockerfile:
   - systemd-assumption              : tests use systemctl/journalctl/systemd —
@@ -33,7 +40,8 @@ import glob
 import os
 import re
 
-from common import WARN, PASS, finding, emit, read_text, discover_tasks, task_paths
+from common import (WARN, PASS, finding, emit, read_text, discover_tasks,
+                    task_paths, load_toml, is_reflection_schema)
 
 SERVER_MARK = re.compile(r"\b(uvicorn|gunicorn|fastapi|flask|grpc\.server|"
                          r"add_insecure_port|http\.server|app\.run\(|HTTPServer|"
@@ -44,6 +52,34 @@ LAUNCH_MARK = re.compile(r"(\bnohup\b|\buvicorn\b|\bgunicorn\b|&\s*$|&\s*\n|"
                          r"-m\s+\S+\s|\.\/\S+\s*&)", re.I)
 HEAVY = re.compile(r"\b(spark|pyspark|neo4j|elasticsearch|hadoop|milvus|clickhouse|"
                    r"-Xmx|cassandra)\b", re.I)
+
+# "appropriate decomposition" (Reflection, Solution tab): large source embedded in
+# solve.sh via a heredoc — should be a separate file COPYed into solution/.
+HEREDOC_START = re.compile(r"<<-?\s*[\"']?([A-Za-z_]\w*)[\"']?")
+SRC_EXT = re.compile(r"\.(py|c|cc|cpp|cxx|h|hpp|go|rs|java|js|ts|rb|php|pl|sql|scala|kt|lua)\b", re.I)
+BIG_HEREDOC = 60        # any heredoc body this long ⇒ a "large source file" inlined
+SRC_HEREDOC = 40        # a heredoc writing a code-extension file, this long
+LONG_SOLVE = 200        # whole-script length that signals undecomposed helper logic
+
+
+def _heredoc_blocks(lines):
+    """Yield (start_line, body_len, dest) for each heredoc in the script."""
+    out, i, n = [], 0, len(lines)
+    while i < n:
+        m = HEREDOC_START.search(lines[i])
+        if m:
+            delim = m.group(1)
+            pre = lines[i].split("<<", 1)[0]
+            dm = re.search(r">>?\s*(\S+)", pre)
+            dest = dm.group(1) if dm else ""
+            j = i + 1
+            while j < n and lines[j].strip() != delim:
+                j += 1
+            out.append((i + 1, j - (i + 1), dest))
+            i = j + 1
+        else:
+            i += 1
+    return out
 
 
 def _solution_text(root):
@@ -143,6 +179,33 @@ def _check_solve(root, name):
                            fix="Restart or reload the daemon after the edit (e.g. `service <svc> "
                                "restart` / `kill -HUP` / re-launch), or edit before first start."))
 
+    # appropriate decomposition: a large heredoc inlines a source file into solve.sh,
+    # or solve.sh is very long — both should be separate files COPYed into solution/.
+    # Reflection-gated: inlining source via heredoc is the norm across the legacy TB/OTS
+    # corpus, so only hold Reflection-schema tasks (the ones built to this rule) to it.
+    reflection = is_reflection_schema(load_toml(task_paths(root)["task.toml"])) \
+        if os.path.isfile(task_paths(root)["task.toml"]) else False
+    blocks = _heredoc_blocks(lines) if reflection else []
+    big = next(((ln, bl, dest) for ln, bl, dest in blocks
+                if bl >= BIG_HEREDOC or (SRC_EXT.search(dest) and bl >= SRC_HEREDOC)), None)
+    if big:
+        ln, bl, dest = big
+        out.append(finding(name, "solution", WARN, "solve-embedded-heredoc",
+                           detail=f"solve.sh embeds a {bl}-line heredoc"
+                                  f"{(' writing ' + dest) if dest else ''} (line {ln}) — a source "
+                                  "file inlined in solve.sh. Reflection wants long scripts / large "
+                                  "source placed in separate files, not embedded heredocs.",
+                           location=f"solution/solve.sh:{ln}",
+                           fix="Move the body to a file under solution/ and COPY/run it from solve.sh."))
+    elif reflection and len(lines) >= LONG_SOLVE:
+        out.append(finding(name, "solution", WARN, "solve-too-long",
+                           detail=f"solve.sh is {len(lines)} lines — complex helper logic that "
+                                  "should be decomposed into separate files rather than living "
+                                  "entirely in solve.sh.",
+                           location="solution/solve.sh",
+                           fix="Extract helper logic into separate files under solution/ and "
+                               "invoke them from solve.sh."))
+
     # server defined but never started
     sol = _solution_text(root)
     if SERVER_MARK.search(sol) and not LAUNCH_MARK.search(text):
@@ -156,10 +219,29 @@ def _check_solve(root, name):
     return out
 
 
+NET_CALL = re.compile(r"\brequests\.(?:get|post|put|delete|head|patch|request)\s*\(|"
+                      r"\burlopen\s*\(|\bsocket\.create_connection\s*\(|httpx\.(?:get|post|Client)",
+                      re.I)
+
+
 def _check_tests_and_cmd(root, name):
     out = []
     ttext = read_text(task_paths(root)["test.sh"]) + "\n" + \
         read_text(task_paths(root)["test_outputs.py"])
+    # "Fast enough" (Reflection): the verifier must bound its calls or it can hang past
+    # the configured timeout. Flag a network/service call in the verifier with no
+    # timeout= anywhere in the file (the classic blocker). The authoritative runtime
+    # check is behavioral (verifier-exceeds-timeout); this is the cheap pre-run signal.
+    if NET_CALL.search(ttext) and not re.search(r"\btimeout\s*=", ttext) \
+            and not re.search(r"\.settimeout\s*\(", ttext):
+        m = NET_CALL.search(ttext)
+        out.append(finding(name, "tests", WARN, "verifier-unbounded-call",
+                           detail=f"the verifier makes a network/service call (`{m.group(0)[:40]}`) "
+                                  "with no timeout — it can block past the configured "
+                                  "verifier timeout and hang the run.",
+                           location="tests/",
+                           fix="Pass a timeout (e.g. requests.get(..., timeout=10)) / "
+                               "sock.settimeout(...) to every service call in the verifier."))
     if re.search(r"\b(systemctl|journalctl)\b|/run/systemd", ttext):
         out.append(finding(name, "tests", WARN, "systemd-assumption",
                            detail="tests use systemctl/journalctl — absent in most non-Docker "
