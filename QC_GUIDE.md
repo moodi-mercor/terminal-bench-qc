@@ -276,6 +276,19 @@ agent-visible environment.
   but never its value); bare `os.path.exists(out)` for a file whose *contents* are
   the actual deliverable. WARN normally; **FAIL when it lets a wrong solution pass
   an essential requirement**.
+- **Undocumented structured output** (`structured-output-undocumented`, WARN→FAIL) —
+  the task must produce a structured artifact (JSON / CSV / YAML / config file /
+  database rows / API response) and the verifier asserts its **shape**, but the exact
+  schema (fields / columns / types / format) is documented **neither** in the
+  instruction **nor** in a clearly-referenced spec/sample staged in `environment/`.
+  The agent can't know the required structure, so a correct-in-spirit solution fails
+  on shape alone. **FAIL** when the verifier pins a structure the agent has no way to
+  discover; **WARN** when it's partial/ambiguous. Before flagging: the schema counts
+  as documented if it's an example block, a field/column/key list, a named key
+  (`"result"`), or derivable from a sample/input the instruction points to — and a
+  schema that is purely *verifier-intrinsic* but also discoverable in the env is fine.
+  (The static gate raises this as a candidate; confirm against the env + the
+  verifier's assertions, or emit `verify-refuted` if the schema is documented/derivable.)
 
 ### Check 2 — Comprehensive test coverage
 
@@ -454,6 +467,13 @@ tested on new tasks; do not thin it out.
 >      (asserts a substring but ignores exit code; checks a value's *format* not its
 >      value; `os.path.exists(out)` when the file's *contents* are the deliverable).
 >      FAIL when it lets a wrong solution pass an essential requirement.
+>    - `structured-output-undocumented` (WARN→FAIL) — the task must produce a structured
+>      output (JSON/CSV/YAML/config/DB rows/API response) and the verifier asserts its
+>      shape, but the exact schema is documented neither in the instruction nor a
+>      referenced spec/sample in `environment/`. FAIL when the verifier pins a structure
+>      the agent can't discover. Don't flag if the schema is shown (example block,
+>      field/column list, named key like `"result"`) or derivable from a sample/input
+>      the instruction points to. (A static candidate may be attached — confirm or refute.)
 > 2. **Comprehensive coverage.** Every requirement is tested on *both* the
 >    correctness route (right answer?) and the optimal-solution route (the required
 >    algorithm / perf bound / API?). Flag a stated O(n log n), latency, or memory
@@ -789,7 +809,7 @@ siblings (e.g. `junior-time-out-of-range`, `nonpositive-expert-time`,
 `apt-get-upgrade`, `missing-multistage-build`, `broad-chmod`,
 `dockerfile-heredoc-source`, `archive-fixture-not-extracted`, `missing-dockerignore`,
 `instruction-too-long`, `instruction-relative-path`, `prescriptive-instruction`,
-`test-runtime-install`,
+`structured-output-undocumented`, `test-runtime-install`,
 `reward-path-nonstandard`, `reward-pre-created`, `task-name-not-kebab`,
 `task-name-too-long`, `unnecessary-files`, `crlf-line-endings`, `non-text-asset`,
 `prompt-injection`, `hidden-unicode`, `obfuscated-payload`, `near-duplicate-solve`,

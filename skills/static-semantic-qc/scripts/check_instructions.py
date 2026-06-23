@@ -18,6 +18,12 @@ need judgment for — so they're caught cheaply on every task:
                               only: some specificity is verifier-intrinsic (the test
                               links a named function), so the semantic reviewer confirms
                               whether it's gratuitous (`over-specified-instruction`).
+  - structured-output-undocumented  the task requires a structured output (JSON/CSV/
+                              YAML/config/DB rows/API response) but no schema is
+                              documented in the instruction OR a spec/sample file in the
+                              environment. WARN CANDIDATE — the schema may live in a
+                              sample the agent studies, so the reviewer (which reads the
+                              env) confirms.
   - instruction-missing       instruction.md absent or empty (also caught by
                               structure, but reported here for the instructions area)
 
@@ -30,6 +36,7 @@ Usage:
 Emits findings with area="instructions".
 """
 import argparse
+import os
 import re
 
 from common import WARN, FAIL, PASS, finding, emit, read_text, discover_tasks, task_paths
@@ -67,6 +74,32 @@ BYTE_LAYOUT = re.compile(r"\bbytes?\s+\d+|\b\d+\s+bytes?\b|\b\d+-byte\b|\b0x[0-9
 # bare directive density (must/exactly/...) — a weak co-signal, never alone
 DIRECTIVE = re.compile(r"\b(must|exactly|precisely|verbatim|do not|step\s+\d)\b", re.I)
 
+# ---- structured-output schema specification ----
+_FMT = r"(?:json|jsonl|ndjson|csv|tsv|yaml|yml|toml|xml|parquet)"
+# the task is asked to PRODUCE a structured artifact (output context + a format/sink)
+STRUCT_REQ = re.compile(
+    r"\b(?:write|writes|output|outputs|produc\w*|return\w*|generat\w*|sav\w*|emit\w*|"
+    r"creat\w*|populat\w*|insert\w*|store\w*|serializ\w*|export\w*)\b[^.\n]{0,70}"
+    r"\b(?:" + _FMT + r"|config\s+file|database|\btable\b|\brows?\b|api\s+response|endpoint)\b",
+    re.I)
+# NOTE: deliberately no bare-path trigger — a standalone `.json`/`.csv` mention matches
+# INPUT files too (e.g. "compare against /etc/allocations.json"), which over-flags.
+# STRUCT_REQ requires an output verb, so it keys on producing structured output.
+# the schema IS documented in the instruction: a tagged/sample block, JSON keys, or a
+# field/column/key enumeration.
+SCHEMA_FENCE = re.compile(r"```\s*" + _FMT, re.I)
+SCHEMA_JSONKEYS = re.compile(r'"[\w-]+"\s*:')                      # "field": ...
+SCHEMA_ENUM = re.compile(r"\b(columns?|fields?|keys?|schema|format|headers?|structure)\b\s*[:\-]", re.I)
+SCHEMA_FOLLOWS = re.compile(r"\b(?:the following|this)\s+(?:fields?|columns?|keys?|schema|format|structure)\b", re.I)
+# fields named inline near an output statement: "...contains `msg_id`, `saas_ts`, `action`"
+SCHEMA_INLINE = re.compile(r"\b(?:contain|includ|with|having|consist|compris)\w*\b[^.\n]{0,80}"
+                           r"`[\w-]+`[^.\n]{0,80}`[\w-]+`", re.I)
+# a named key/field/column with a quoted name: "...a JSON object with a key 'result'"
+SCHEMA_NAMED = re.compile(r"\b(?:key|field|column|attribute|propert|header|tag)s?\b[^.\n]{0,24}['\"`][\w-]+['\"`]", re.I)
+# environment files that would document a schema/sample the agent can read
+ENV_SPEC = re.compile(r"(schema|spec|openapi|swagger|\.proto$|sample|example|fixture|"
+                      r"expected|template)", re.I)
+
 
 def _visible_len(text):
     # drop fenced code blocks and collapse whitespace to estimate prose length
@@ -95,6 +128,26 @@ def _prescriptive_signals(text):
     if n_step >= 3 and n_dir >= 10 and "exact byte/hex layout" not in smells:
         smells.append(f"{n_dir} prescriptive directives")
     return smells
+
+
+def _requires_structured_output(text):
+    return bool(STRUCT_REQ.search(text))
+
+
+def _schema_documented(text, root):
+    """True if the structured output's schema is documented in the instruction OR a
+    spec/sample file in the environment (so the agent can know the exact shape)."""
+    if (SCHEMA_FENCE.search(text) or SCHEMA_JSONKEYS.search(text)
+            or SCHEMA_ENUM.search(text) or SCHEMA_FOLLOWS.search(text)
+            or SCHEMA_INLINE.search(text) or SCHEMA_NAMED.search(text)):
+        return True
+    env = task_paths(root)["environment"]
+    if os.path.isdir(env):
+        for dirpath, _dirs, files in os.walk(env):
+            for fn in files:
+                if ENV_SPEC.search(fn):
+                    return True
+    return False
 
 
 def check_task(name, root):
@@ -159,6 +212,19 @@ def check_task(name, root):
                            location=loc,
                            fix="State the deliverable and acceptance criteria; drop step-by-step "
                                "recipes and any implementation detail the verifier doesn't require."))
+
+    # structured output required but no schema documented (instruction or env spec/sample)
+    if _requires_structured_output(text) and not _schema_documented(text, root):
+        out.append(finding(name, "instructions", WARN, "structured-output-undocumented",
+                           detail="instruction.md asks for a structured output (JSON/CSV/YAML/"
+                                  "config/DB rows/API response) but no schema is documented — no "
+                                  "sample/field-list/format block in the prompt and no spec/sample "
+                                  "file in environment/. The agent can't know the exact shape. "
+                                  "CANDIDATE: the schema may be in a sample the agent studies — the "
+                                  "reviewer confirms against the env and the verifier's assertions.",
+                           location=loc,
+                           fix="Document the exact schema (fields/columns/types + an example) in "
+                               "the instruction, or reference a spec file staged in environment/."))
 
     if not out:
         out.append(finding(name, "instructions", PASS, "instructions-static-ok"))
