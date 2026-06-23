@@ -39,7 +39,7 @@ Tests verify every part of the instruction on *both* routes: the correctness rou
 
 - **spelling-grammar** (note, non-blocking) — typos/grammar/markdown/LaTeX in `instruction.md`.
 - **instruction-clarity** (escalate toward FAIL) — two plausible readings, both reasonable, and the tests only accept one.
-- **over-specified-instruction** (FAIL when it hands over the answer) — enumerated fix lists, step-by-step recipes, exact bug locations, answer-key tables. The instruction should state *what success looks like*, not *how to get there*.
+- **over-specified-instruction** — the prompt dictates the *method* instead of *what success looks like*, against Reflection's "simple, exploration-encouraging" bar. Triggers: dictated function/method signatures, step-by-step algorithm recipes ("1. read X, 2. compute SHA256, 3. hex-encode…"), exact byte/hex layout of an artifact the agent must PRODUCE, enumerated fix lists, exact bug locations, answer-key tables, dictated internal file/module names. **Litmus:** could you write a meaningfully different correct solution? If the method is pinned so there's only one way, it's over-specified. **Intrinsic gate — do NOT flag when:** the detail is verifier-intrinsic (a signature the test links/imports, an output schema/path/value the verifier reads/asserts) OR it merely describes what already EXISTS in the environment (an input file format, staged data). Documenting the INPUT the agent parses is fine; dictating the OUTPUT code it must write is not. Default WARN; escalate toward FAIL only when the prescription removes essentially all problem-solving. (A static `prescriptive-instruction` candidate may be present in the findings — confirm or refute it against this litmus.)
 
 ## Dimension 4 — Golden-patch correctness
 

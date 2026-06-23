@@ -302,9 +302,26 @@ ambiguity a competent developer would have to *guess* past. Single typo →
 `spelling-grammar` WARN. Ambiguity that changes what gets built (two readings,
 both plausible, tests only accept one) → `instruction-clarity`, escalate toward
 FAIL. Also flag **over-specification** here (`over-specified-instruction`): the
-instruction hands over the solution — enumerated fix lists, step-by-step recipes,
-exact bug locations, answer-key tables. The instruction should state *what success
-looks like*, not *how to get there*.
+instruction hands over the *method* instead of stating *what success looks like* —
+against Reflection's "simple, exploration-encouraging" bar. **Triggers:** dictated
+function/method signatures, step-by-step algorithm recipes ("1. read X, 2. compute
+SHA256, 3. hex-encode…"), exact byte/hex layouts for an artifact the agent must
+*produce*, enumerated fix lists, exact bug locations, answer-key tables, or dictated
+internal file/module names.
+
+- **The litmus:** *can you write a correct solution that differs meaningfully from
+  the prescribed method?* If the prompt pins the algorithm / data structure / helper
+  names so tightly there's only one way to write it, it's over-specified.
+- **The intrinsic gate (check BEFORE flagging):** specificity is **legitimate** when
+  it is (a) **verifier-intrinsic** — a signature the test links / imports, an output
+  schema/path the verifier reads, a value the test asserts — or (b) **describing what
+  *exists*** in the environment (an input file format, the data already staged). It is
+  **over-specification** only when it dictates *how to implement* something the
+  verifier never requires. Documenting the **input** format the agent must parse is
+  fine; dictating the **output** code the agent must write is not.
+- The static gate raises `prescriptive-instruction` (WARN candidate) on spec-sheet
+  smells; confirm or refute it here against the litmus + intrinsic gate. Default WARN;
+  escalate toward FAIL only when the prescription removes essentially all problem-solving.
 
 ### Check 4 — Golden-patch / solution correctness
 
@@ -447,9 +464,14 @@ tested on new tasks; do not thin it out.
 > 3. **Hygiene.** `spelling-grammar` (WARN) — typos/grammar/markdown/LaTeX in
 >    `instruction.md`. `instruction-clarity` (escalate toward FAIL) — two plausible
 >    readings the tests only accept one of. `over-specified-instruction` — the prompt
->    hands over the solution (enumerated fix lists, step-by-step recipes, exact bug
->    locations, answer-key tables); it should state *what success looks like*, not
->    *how to get there*.
+>    dictates the *method* (function signatures, step-by-step algorithm recipes, exact
+>    byte/hex layout of an artifact the agent must PRODUCE, enumerated fix lists, exact
+>    bug locations) instead of *what success looks like*. Litmus: *could you write a
+>    meaningfully different correct solution?* If not, it's over-specified. **Intrinsic
+>    gate:** detail required by the verifier (a signature the test links, an output
+>    schema/path it reads) or describing an EXISTING input/env format is legitimate —
+>    NOT over-spec; only dictating the implementation the agent must author counts.
+>    (A static `prescriptive-instruction` candidate may be attached — confirm or refute it.)
 > 4. **Golden-patch correctness.** *First name the underlying algorithm/method the
 >    task calls for*, then trace `solve.sh` against a canonical solution for that
 >    method and through each `test_check_*`. It must implement real logic (no
@@ -766,7 +788,8 @@ siblings (e.g. `junior-time-out-of-range`, `nonpositive-expert-time`,
 `base-image-not-digest-pinned`, `base-image-not-approved`, `apt-not-consolidated`,
 `apt-get-upgrade`, `missing-multistage-build`, `broad-chmod`,
 `dockerfile-heredoc-source`, `archive-fixture-not-extracted`, `missing-dockerignore`,
-`instruction-too-long`, `instruction-relative-path`, `test-runtime-install`,
+`instruction-too-long`, `instruction-relative-path`, `prescriptive-instruction`,
+`test-runtime-install`,
 `reward-path-nonstandard`, `reward-pre-created`, `task-name-not-kebab`,
 `task-name-too-long`, `unnecessary-files`, `crlf-line-endings`, `non-text-asset`,
 `prompt-injection`, `hidden-unicode`, `obfuscated-payload`, `near-duplicate-solve`,

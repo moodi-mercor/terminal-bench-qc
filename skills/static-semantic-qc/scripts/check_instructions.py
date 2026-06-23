@@ -12,6 +12,12 @@ need judgment for — so they're caught cheaply on every task:
   - instruction-too-long      over ~1500 tokens (Reflection caps instruction length)
   - instruction-relative-path explicit ./ or ../ path the agent must use (Reflection
                               requires absolute paths for files the agent reads/writes)
+  - prescriptive-instruction  "spec-sheet" smells — dictated function signatures,
+                              step-by-step algorithm recipes, exact byte/hex layouts —
+                              i.e. the prompt says *how* not *what*. A WARN CANDIDATE
+                              only: some specificity is verifier-intrinsic (the test
+                              links a named function), so the semantic reviewer confirms
+                              whether it's gratuitous (`over-specified-instruction`).
   - instruction-missing       instruction.md absent or empty (also caught by
                               structure, but reported here for the instructions area)
 
@@ -42,6 +48,25 @@ MAX_TOKENS = 1500
 # Match ./foo or ../foo path tokens; ignore bare ./ and markdown link fragments.
 REL_PATH = re.compile(r"(?<![\w./])\.\.?/[\w./-]*\w")
 
+# ---- prescriptiveness ("spec-sheet") signals: the prompt dictates HOW, not WHAT ----
+# A dictated function/method signature: a C-style prototype, a `def name(...)`, or a
+# backtick-wrapped call with >=2 named params (`expand(template, vars_dict)`).
+SIG_C = re.compile(r"\b(?:int|void|size_t|unsigned|char|double|float|bool|long)\s+\*?\w+\s*\([^;){]{0,200}\)")
+SIG_PY = re.compile(r"\bdef\s+\w+\s*\(")
+SIG_BACKTICK = re.compile(r"`\w+\([a-z_]\w*(?:\s*,\s*[a-z_]\w*)+\)`")
+# a numbered step that opens with a compute/transform imperative = recipe, not a goal
+STEP_RECIPE = re.compile(
+    r"^\s*\d+[.)]\s*(read|comput|decode|encode|hash|loop|iterat|pars|hex|return|appl|"
+    r"concat|split|sort|multipl|deriv|call|convert|map|extract|append|write|insert|"
+    r"replace|verif|xor|shift|round|truncat|pad)\w*\b", re.I | re.M)
+# exact byte/hex layout dictation (prose "Bytes 0-3"/"48-byte"/"12 bytes", hex tags,
+# fixed-width ints, endianness, or a markdown offset/length table)
+BYTE_LAYOUT = re.compile(r"\bbytes?\s+\d+|\b\d+\s+bytes?\b|\b\d+-byte\b|\b0x[0-9a-fA-F]{2}\b|"
+                         r"\buint(?:8|16|32|64)\b|little-endian|big-endian|\bTLV\b|"
+                         r"\|\s*offset\b", re.I)
+# bare directive density (must/exactly/...) — a weak co-signal, never alone
+DIRECTIVE = re.compile(r"\b(must|exactly|precisely|verbatim|do not|step\s+\d)\b", re.I)
+
 
 def _visible_len(text):
     # drop fenced code blocks and collapse whitespace to estimate prose length
@@ -51,6 +76,25 @@ def _visible_len(text):
 
 def _est_tokens(text):
     return len(text) // 4
+
+
+def _prescriptive_signals(text):
+    """Return the list of strong spec-sheet smells present (>=2 ⇒ flag a candidate)."""
+    n_sig = len(SIG_C.findall(text)) + len(SIG_PY.findall(text)) + len(SIG_BACKTICK.findall(text))
+    n_step = len(STEP_RECIPE.findall(text))
+    n_byte = len(BYTE_LAYOUT.findall(text))
+    n_dir = len(DIRECTIVE.findall(text))
+    smells = []
+    if n_sig >= 2:
+        smells.append(f"{n_sig} dictated function signatures")
+    if n_step >= 3:
+        smells.append(f"{n_step}-step algorithm recipe")
+    if n_byte >= 4:
+        smells.append("exact byte/hex layout")
+    # a multi-step recipe with heavy directive language is itself a strong smell
+    if n_step >= 3 and n_dir >= 10 and "exact byte/hex layout" not in smells:
+        smells.append(f"{n_dir} prescriptive directives")
+    return smells
 
 
 def check_task(name, root):
@@ -100,6 +144,21 @@ def check_task(name, root):
                                   "ABSOLUTE paths for any file the agent must read/modify/create.",
                            location=loc,
                            fix="Rewrite the path(s) as absolute (e.g. /app/... or /workdir/...)."))
+
+    # prescriptiveness: needs >=2 independent spec-sheet smells to fire (so a task
+    # that merely lists acceptance criteria isn't flagged). A CANDIDATE only — the
+    # reviewer decides if the specificity is gratuitous vs verifier-intrinsic.
+    smells = _prescriptive_signals(text)
+    if len(smells) >= 2:
+        out.append(finding(name, "instructions", WARN, "prescriptive-instruction",
+                           detail=f"instruction.md reads like an implementation spec ({'; '.join(smells)}) "
+                                  "— it may dictate *how* rather than *what success looks like*, "
+                                  "against Reflection's 'simple, exploration-encouraging' bar. "
+                                  "CANDIDATE: confirm the detail is gratuitous, not verifier-intrinsic "
+                                  "(a signature the test links / a format the env defines is legitimate).",
+                           location=loc,
+                           fix="State the deliverable and acceptance criteria; drop step-by-step "
+                               "recipes and any implementation detail the verifier doesn't require."))
 
     if not out:
         out.append(finding(name, "instructions", PASS, "instructions-static-ok"))
