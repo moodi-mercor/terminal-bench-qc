@@ -26,6 +26,12 @@ Emits one finding per task (area="tests"): `verifier-defended` (PASS) listing th
 defenses, or `verifier-undefended` (WARN) — a verifier with none of these and only
 literal comparisons is genuinely gameable, and a cheat-vector on it is credible.
 
+It also takes Reflection's "functional verification" stance: `source-match-verification`
+(WARN) when the verifier matches the agent's SOURCE for keywords/regex but never
+executes it / queries a service-DB / parses a produced artifact — verifying text, not
+behaviour (brittle + gameable). A source grep alongside a real outcome test is a guard,
+not this defect, so it fires only when there is NO functional signal.
+
 A shell integrity guard (`sha256sum -c` / `md5sum -c` / `cmp`) against an in-image
 baked reference is NOT a real defense when the agent runs as root (no USER drop):
 the agent overwrites both the file and its reference. Such a `degenerate-integrity-guard`
@@ -62,6 +68,34 @@ RE_EXEC = re.compile(r"(?:subprocess\.(?:run|check_output|check_call|call|Popen)
 
 DEFENSES = [("mutated-rerun", MUTATED), ("recompute-or-hash", RECOMPUTE),
             ("source-grep-guard", SRC_GREP), ("re-exec-agent", RE_EXEC)]
+
+# FUNCTIONAL verification = the verifier executes code / queries a service or DB /
+# parses a produced data artifact (i.e. checks BEHAVIOUR, not source text). Used to
+# decide whether source-keyword matching is the PRIMARY signal (a defect) or just an
+# anti-cheat guard sitting alongside a real outcome test (fine). RE_EXEC also counts.
+# Require call SYNTAX, not bare keywords — a source-grep that searches for "import
+# pandas" / "SELECT" must NOT read as functional (that was the bug). Each alternative
+# ends in `(` (an actual call) or `.connect(`/`.execute(` (a real DB/service op).
+FUNCTIONAL = re.compile(
+    r"subprocess\.(?:run|Popen|check_output|check_call|call)\s*\(|os\.(?:system|popen)\s*\(|"
+    r"requests\.(?:get|post|put|delete|head|patch|request)\s*\(|urlopen\s*\(|httpx\.\w+\s*\(|"
+    r"socket\.(?:create_connection|socket)\s*\(|\.execute\s*\(|\.cursor\s*\(|"
+    r"(?:sqlite3|psycopg2?|pymysql|duckdb|redis)\.(?:connect|Redis|StrictRedis)\s*\(|"
+    r"json\.loads?\s*\(|yaml\.(?:safe_)?load\s*\(|pd\.read_\w+\s*\(|pandas\.read_\w+\s*\(|"
+    r"\bImage\.open\s*\(|csv\.(?:reader|DictReader)\s*\(|"
+    r"importlib\.|spec_from_file_location\s*\(|exec_module\s*\(|runpy\.|__import__\s*\(",
+    re.I)
+# the verifier reads the agent's SOURCE CODE (a file with a code extension) or greps
+# it — keyword/text matching rather than behaviour. Keyed strictly on a source-code
+# EXTENSION so reading the agent's OUTPUT (a report/log/.txt/.json, often in a var
+# named `content`) is NOT mistaken for source matching.
+_SRC_EXT = r"(?:py|go|c|cc|cpp|cxx|h|hpp|rs|js|ts|java|sh|rb|php|pl|scala|kt|lua)"
+# require the source file's CONTENT to be read (open(...).read() / grep), NOT a bare
+# Path(...py) — that's usually an existence check, and the verifier then imports & runs
+# the module (functional). Keeps this to genuine "read the source text and match it".
+SOURCE_MATCH = re.compile(
+    r"open\s*\([^)\n]*\." + _SRC_EXT + r"['\"][^)\n]*\)[^\n]*\.read\s*\(\)|"
+    r"\bgrep\b[^\n]*\." + _SRC_EXT + r"\b", re.I)
 
 # A shell integrity guard (`sha256sum -c`, `md5sum -c`, `cmp`). When it compares
 # against an *in-image baked* reference and the agent runs as root, it is decorative
@@ -113,6 +147,23 @@ def check_task(name, root):
                                  "literal in test_outputs.py, or drop privileges with USER."))
         if "recompute-or-hash" in found:
             found.remove("recompute-or-hash")
+    # Functional-verification stance (Reflection): a verifier that matches the agent's
+    # SOURCE for keywords/regex but never executes it, queries a service/DB, or parses
+    # a produced artifact is verifying TEXT not BEHAVIOUR — brittle (rejects correct
+    # alternative implementations) and gameable. A source grep ALONGSIDE a real outcome
+    # test is an anti-cheat guard, not this defect — so require no functional signal.
+    if SOURCE_MATCH.search(txt) and not (RE_EXEC.search(txt) or FUNCTIONAL.search(txt)):
+        extra.append(finding(name, "tests", WARN, "source-match-verification",
+                             detail="verifier checks the agent's SOURCE for keywords/patterns "
+                                    "(substring/regex/grep) but never executes the program, "
+                                    "queries a service/DB, or parses a produced artifact — it "
+                                    "verifies text, not behaviour. Brittle (a correct alternative "
+                                    "implementation fails) and gameable. CANDIDATE — confirm the "
+                                    "verifier has no functional assertion.",
+                             location="tests/",
+                             fix="Verify behaviour: run the agent's program / check its output / "
+                                 "query the service, and keep source-greps only as an anti-cheat "
+                                 "guard alongside the outcome test."))
     if found:
         return [finding(name, "tests", PASS, "verifier-defended",
                         detail=f"verifier has anti-cheat defense(s): {found} — resists "
