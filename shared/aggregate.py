@@ -209,6 +209,122 @@ def priority_of(f):
     return ""
 
 
+# Remediation class of a defect — drives the FIXABLE sub-bucket (and effort estimate).
+#   relocate   : move grader/truth out of agent space into tests/ (mechanical, minutes)
+#   strengthen : the verifier is weak/brittle — add recompute/mutated-rerun/functional check
+#   align      : instruction <-> verifier mismatch (1-line, but prefer strengthening tests)
+RELOCATE = {"agent-writable-verifier", "truth-baked-verifier-reads", "tests-bake-verifier-reads",
+            "verifier-helper-in-environment", "chmod-not-a-guard", "reward-pre-created",
+            "dockerfile-copies-tests", "dockerfile-copies-solution", "reference-solve-reads-truth",
+            "secret-baked-in-image", "dockerfile-copies-env-tests"}
+STRENGTHEN = {"literal-only-verifier", "source-match-verification", "verifier-undefended",
+              "filename-encodes-answer", "wall-clock-dependent-verifier", "verifier-self-consistent",
+              "existence-only-check", "no-assertion-test", "vacuous-test", "swallowed-assertion",
+              "weak-assertion", "unconditional-reward", "test-sh-swallows-failure",
+              "test-sh-set-e-reward-abort", "empty-parametrize", "skipped-scored-test",
+              "agent-writable-reward-signal", "tests-bake-unread", "truth-named-baked"}
+ALIGN = {"brittle-string-match", "untested-requirement"}
+# DEFINITE brittle/weak-verifier defects (not advisory) — these alone justify FIXABLE.
+# Everything else at P1 (verifier-reads-config-spec, truth-named-baked, tests-bake-unread,
+# agent-writable-reward-signal, reward-path-nonstandard, test-runtime-install, ...) is
+# advisory: it routes to REVIEW for Layer-2/behavioral confirmation, not a confirmed fix.
+CONCRETE_BRITTLE = {"literal-only-verifier", "source-match-verification",
+                    "wall-clock-dependent-verifier", "filename-encodes-answer",
+                    "verifier-self-consistent", "golden-patch-mismatch", "brittle-string-match",
+                    "vacuous-test", "no-assertion-test", "existence-only-check",
+                    "swallowed-assertion", "empty-parametrize", "skipped-scored-test",
+                    "unconditional-reward", "test-sh-swallows-failure",
+                    "test-sh-set-e-reward-abort"}
+# semantic/behavioral signals that the task itself is broken (TOTAL, not fixable by edit)
+ORACLE_FAIL = {"golden-patch-mismatch", "oracle-fails", "reference-fails-own-tests"}
+
+
+def bucketize(task_findings, behavioral=None):
+    """Assign a task to a triage bucket + Studio-ready qc:* tags.
+
+    Static alone yields SHIP vs a CANDIDATE fixable bucket (by defect class); the
+    TOTAL buckets (broken-oracle / gameable / unviable) are decided by the runtime
+    signals in `behavioral` = {oracle:1/0, noop:1/0, cheat:1/0, builds:bool} (any may
+    be absent). Returns {bucket, remediation, priority, confidence, needs_behavioral, tags}."""
+    flagged = [f for f in task_findings if f.get("severity") in (FAIL, WARN)]
+    titles = {f.get("title") for f in flagged}
+    # `verifier-undefended` is the weakest signal — "no anti-cheat defense DETECTED",
+    # which fires on most (incl. perfectly clean functional) verifiers. It must not by
+    # itself make a task FIXABLE-vs-SHIP or set the bucket priority; it stays a P1 row
+    # in defects.csv but is advisory-only here.
+    SOFT = {"verifier-undefended"}
+    real = [f for f in flagged if f.get("title") not in SOFT]
+    pri_rank = {"P0": 0, "P1": 1, "P2": 2}
+    pris = [p for p in (priority_of(f) for f in real) if p]
+    priority = min(pris, key=lambda p: pri_rank.get(p, 9)) if pris else ""
+    b = behavioral or {}
+    confirmed = bool(behavioral)
+
+    bucket = remediation = ""
+    # --- TOTAL (need runtime, except the explicit oracle-fail finding classes) ---
+    if b.get("builds") is False:
+        bucket, remediation = "total", "unviable"
+    elif b.get("oracle") == 0 or (titles & ORACLE_FAIL):
+        bucket, remediation = "total", "broken-oracle"
+    elif b.get("noop") == 1 or b.get("cheat") == 1:
+        bucket, remediation = "total", "gameable"
+    else:
+        # FIXABLE needs a CONCRETE actionable defect — a leak (P0), a hard FAIL, or a
+        # definite brittle/weak verifier. A task whose only flags are soft advisory
+        # WARNs (config-spec, truth-named-baked, reward-signal, metadata/dockerfile
+        # hygiene, ...) is NOT a confirmed fix — it goes to REVIEW for Layer-2/
+        # behavioral confirmation. Otherwise the WARN-heavy OTS baseline makes ~90% of
+        # tasks look "fixable", which is useless.
+        has_fail = any(f.get("severity") == FAIL for f in real)
+        concrete = titles & CONCRETE_BRITTLE
+        if has_fail or priority == "P0" or concrete:
+            bucket = "fixable"
+            if titles & RELOCATE:
+                remediation = "relocate"
+            elif concrete or (titles & STRENGTHEN):
+                remediation = "strengthen"
+            elif titles & ALIGN:
+                remediation = "align"
+            else:  # a hard FAIL with no verifier-class — name it by area
+                area = next((f.get("area") for f in real if f.get("severity") == FAIL), "")
+                remediation = {"metadata": "metadata", "structure": "add-file",
+                               "dockerfile": "dockerfile"}.get(area, "review")
+        elif priority == "P1":
+            bucket = "review"   # advisory-only — confirm with Layer-2 / behavioral
+        else:
+            bucket = "ship"     # clean or P2 hygiene only
+    needs_behavioral = behavioral is None and bucket in ("fixable", "review")
+    tags = [f"qc:{bucket}"]
+    if remediation:
+        tags.append(f"qc:{remediation}" if bucket == "total" else f"qc:fix-{remediation}")
+    if priority:
+        tags.append(f"qc:{priority.lower()}")
+    tags.append("qc:confirmed" if confirmed else "qc:candidate")
+    if needs_behavioral:
+        tags.append("qc:needs-behavioral")
+    return {"bucket": bucket, "remediation": remediation, "priority": priority,
+            "confidence": "confirmed" if confirmed else "candidate",
+            "needs_behavioral": needs_behavioral, "tags": tags}
+
+
+def write_buckets_csv(tasks, path, behavioral_map=None):
+    """One row per task: bucket / remediation / priority / confidence / qc:* tags.
+    `tasks` is per_task(findings); `behavioral_map` optionally maps task -> runtime dict."""
+    behavioral_map = behavioral_map or {}
+    rows = []
+    for task, areas in tasks.items():
+        flat = [f for fs in areas.values() for f in fs]
+        rows.append((task, bucketize(flat, behavioral_map.get(task))))
+    with open(path, "w", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(["task", "bucket", "remediation", "priority", "confidence", "tags"])
+        for task, bk in sorted(rows):
+            w.writerow([task, bk["bucket"], bk["remediation"], bk["priority"],
+                        bk["confidence"], " ".join(bk["tags"])])
+    return Counter(bk["bucket"] + (f"/{bk['remediation']}" if bk["remediation"] else "")
+                   for _, bk in rows)
+
+
 def write_defects_csv(findings, path):
     """One row per flagged finding: priority + the defect + WHY it failed + the fix +
     which layer caught it. The "what's wrong and why" export — defects only (FAIL and
@@ -345,9 +461,22 @@ def main():
     write_distribution(findings, rows, os.path.join(out_dir, "defect-distribution.md"))
     n_defects = write_defects_csv(findings, os.path.join(out_dir, "defects.csv"))
 
+    # Triage buckets + Studio qc:* tags. If a behavioral_signals.json is present
+    # ({task: {oracle,noop,cheat,builds}}), the TOTAL buckets are confirmed from it.
+    bmap = {}
+    bsig = os.path.join(args.findings_dir, "behavioral_signals.json")
+    if os.path.isfile(bsig):
+        try:
+            bmap = json.load(open(bsig))
+        except (OSError, ValueError):
+            bmap = {}
+    hist = write_buckets_csv(tasks, os.path.join(out_dir, "tasks_buckets.csv"), bmap)
+
     n_fail = sum(1 for r in rows.values() if r["overall"] == FAIL)
     print(f"[aggregate] {len(rows)} tasks, {n_fail} FAIL, {n_defects} flagged findings -> "
-          f"{out_dir}/review-ssot.csv, review-ssot.md, defect-distribution.md, defects.csv")
+          f"{out_dir}/review-ssot.csv, review-ssot.md, defect-distribution.md, defects.csv, tasks_buckets.csv")
+    print(f"  buckets: {dict(sorted(hist.items(), key=lambda kv: -kv[1]))}"
+          + ("" if bmap else "  (static candidates; run behavioral to confirm TOTAL)"))
 
 
 if __name__ == "__main__":

@@ -120,12 +120,16 @@ ELAPSED_ASSERT = re.compile(
     r"(?:elapsed|duration|took|latency|runtime|wall[_ ]?clock)\w*\s*[<>]=?\s*[\d.]+|"
     r"assert[^\n]*\b(?:elapsed|duration|took|latency|runtime)\b[^\n]*[<>]|"
     r"assert[^\n]*[<>]=?\s*[\d.]+[^\n]*\b(?:elapsed|duration|seconds?|secs?)\b", re.I)
-# (C1) self-consistency: the EXPECTED/reference value is sourced from the agent's own
-# writable tree (/app, /workspace, /data, cwd) — nothing external pins the answer, so
-# the verifier checks the agent against itself (hospital-railyard class).
+# (C1) self-consistency: the EXPECTED/reference value is READ (not derived) from the
+# agent's own writable tree — nothing external pins the answer, so the verifier checks
+# the agent against itself (hospital-railyard class). Require open() to be the DIRECT
+# value (optionally one int/float/str/json wrapper); if it is buried inside sum()/a
+# comprehension/hashlib, that is RECOMPUTE-from-input (the good pattern) and must NOT
+# fire — that was a false positive on legit recompute.
 SELF_CONSISTENT = re.compile(
-    r"(?:expected|reference|baseline|golden|truth)\w*\s*=\s*[^\n]*"
-    r"open\s*\(\s*['\"](?:/app|/workspace|/data|\./|[A-Za-z0-9_]+\.)", re.I)
+    r"(?:expected|reference|baseline|golden|truth)\w*\s*=\s*"
+    r"(?:int\s*\(|float\s*\(|str\s*\(|bytes\s*\(|json\.loads?\s*\(|yaml\.\w+\s*\(|\.?\s*)*\s*"
+    r"open\s*\(\s*['\"](?:/app|/workspace|/data|\./)", re.I)
 # (C2) filename-encodes-answer: pass/validity decided from a file's NAME, not its
 # content — a validity ADJECTIVE tested against an explicit filename extraction.
 # Deliberately tight: a bare `.name`/`.stem`, or generic words like `expected`/`pass`/
