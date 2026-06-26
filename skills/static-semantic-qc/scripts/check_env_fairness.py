@@ -32,7 +32,19 @@ import glob
 import os
 import re
 
-from common import (FAIL, WARN, PASS, finding, emit, read_text, discover_tasks)
+from common import (FAIL, WARN, PASS, finding, emit, read_text, discover_tasks,
+                    load_toml, get, is_reflection_schema)
+
+# bakeable runtime dependency installs (spec: "pip download runs in the build, never
+# at runtime"; "test.sh must not depend on live network installs")
+RUNTIME_INSTALL = re.compile(
+    r"\b(pip[0-9]?\s+install|python[0-9]?\s+-m\s+pip\s+install|uv\s+pip\s+install|"
+    r"apt(?:-get)?\s+install|conda\s+install|npm\s+(?:install|ci)\b|"
+    r"curl\b[^\n]*\|\s*(?:sudo\s+)?sh)\b")
+# a genuine external need that justifies allow_internet=true per the spec
+GENUINE_NET = re.compile(
+    r"hugging\s?face|download (?:a |the )?model|fetch[^\n]*from the internet|"
+    r"external (?:api|service|registry)|live (?:api|data|feed)", re.I)
 
 BUILD_SCRIPTS = ("setup_commands.sh", "setup.sh", "setup_env.sh", "init.sh",
                  "bootstrap.sh", "prestart_setup.sh", "entrypoint.sh",
@@ -121,9 +133,41 @@ def check_task(name, root):
                                fix="Vendor the resource into the image at build time instead "
                                    "of fetching it during verification."))
 
-    # Note: allow_internet=true is NOT flagged here — nearly all OTS tasks allow
-    # internet, so it's noise. Contamination/googleability is handled by
-    # decontaminate.py (corpus similarity) and the semantic review.
+    # 5. Reflection network policy (gated): network must be OFF by default unless a
+    #    justified external need is documented; bakeable installs belong in the build.
+    #    OTS tasks are not flagged here (internet-on is the norm there → noise).
+    toml_path = os.path.join(root, "task.toml")
+    d = load_toml(toml_path)
+    if d and is_reflection_schema(d):
+        raw = read_text(toml_path)
+        allow_net = get(d, "environment.allow_internet")
+        if allow_net is True:
+            net_line = next((l for l in raw.splitlines()
+                             if "allow_internet" in l and "true" in l), "")
+            documented = "#" in net_line  # inline justification comment
+            instr = read_text(os.path.join(root, "instruction.md"))
+            genuine = bool(GENUINE_NET.search(instr))
+            if not documented and not genuine:
+                out.append(finding(name, "anti_cheat", WARN, "internet-on-undocumented",
+                                   detail="allow_internet=true with no documented justification. "
+                                          "Reflection requires network OFF by default; any exception "
+                                          "must be explicit, minimal, and justified per task.",
+                                   location="task.toml",
+                                   fix="Set allow_internet=false (bake deps at build), or add an "
+                                       "inline justification noting the genuine external need."))
+        # bakeable runtime installs in the verifier or the reference solution
+        for rel in ("tests/test.sh", "solution/solve.sh"):
+            t = read_text(os.path.join(root, rel))
+            m = RUNTIME_INSTALL.search(t)
+            if m:
+                out.append(finding(name, "anti_cheat", WARN, "bakeable-runtime-install",
+                                   detail=f"`{rel}` installs dependencies at run time "
+                                          f"(`{m.group(0)[:40]}`). Reflection bakes these at build "
+                                          "(pip download / wheels in the image), never at runtime.",
+                                   location=rel,
+                                   fix="Move the install into the Dockerfile build (network is "
+                                       "available there) — bake the package / wheels / build "
+                                       "backend so the runtime needs no network."))
 
     if not out:
         out.append(finding(name, "anti_cheat", PASS, "env-fairness-static-clean"))
