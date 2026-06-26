@@ -48,6 +48,7 @@ import os
 import re
 
 from common import WARN, PASS, finding, emit, read_text, discover_tasks, task_paths
+import assert_classify
 
 MUTATED = re.compile(r"\b(mutat\w*|regenerat\w*|re[_-]?generate|reshuffl\w*|"
                      r"held[_ -]?out|unseen|perturb\w*|fresh[_ ]?(?:data|input|set)|"
@@ -108,6 +109,36 @@ REAL_RECOMPUTE = re.compile(r"(hashlib|hmac|blake2|recompute\w*|recalculat\w*|Co
 # a non-root USER directive means the agent cannot overwrite the baked reference.
 USER_DROP = re.compile(r"^\s*USER\s+(?!root\b)\S", re.M | re.I)
 
+# --- BRITTLE-VERIFIER signals (deterministic, conservative) ---
+# (B) wall-clock dependence: the verifier MEASURES elapsed time and asserts a bound
+# on it. Reward then rides on host speed / CI load (telemetry/siem-hang class). Needs
+# BOTH a clock read AND an elapsed-bound assertion to fire (a bare time.time() for a
+# filename, or a startup sleep, must NOT trip it).
+WALLCLOCK = re.compile(r"time\.(?:time|monotonic|perf_counter)\s*\(\)|datetime\.now\s*\(\)|"
+                       r"\btime\s+\w", re.I)
+ELAPSED_ASSERT = re.compile(
+    r"(?:elapsed|duration|took|latency|runtime|wall[_ ]?clock)\w*\s*[<>]=?\s*[\d.]+|"
+    r"assert[^\n]*\b(?:elapsed|duration|took|latency|runtime)\b[^\n]*[<>]|"
+    r"assert[^\n]*[<>]=?\s*[\d.]+[^\n]*\b(?:elapsed|duration|seconds?|secs?)\b", re.I)
+# (C1) self-consistency: the EXPECTED/reference value is sourced from the agent's own
+# writable tree (/app, /workspace, /data, cwd) — nothing external pins the answer, so
+# the verifier checks the agent against itself (hospital-railyard class).
+SELF_CONSISTENT = re.compile(
+    r"(?:expected|reference|baseline|golden|truth)\w*\s*=\s*[^\n]*"
+    r"open\s*\(\s*['\"](?:/app|/workspace|/data|\./|[A-Za-z0-9_]+\.)", re.I)
+# (C2) filename-encodes-answer: pass/validity decided from a file's NAME, not its
+# content — a validity ADJECTIVE tested against an explicit filename extraction.
+# Deliberately tight: a bare `.name`/`.stem`, or generic words like `expected`/`pass`/
+# `fail`, must NOT trip it (those match benign idioms — `for filename, expected in
+# expected.items()` dict iteration, error-message f-strings like `... in {f.name}`).
+# Requires (a) an explicit basename/filename/fname token AND (b) a true validity
+# adjective, in either order, close together.
+_VALIDITY = r"valid|invalid|malicious|benign|legit(?:imate)?|forbidden|infected|clean|safe|unsafe|good|bad"
+_FNAME = r"os\.path\.basename|\bbasename\s*\(|\bfilename\b|\bfname\b"
+FILENAME_ENCODES = re.compile(
+    r"(?:" + _FNAME + r")[^\n]{0,60}\b(?:" + _VALIDITY + r")\b|"
+    r"\b(?:" + _VALIDITY + r")\b[^\n]{0,30}\bin\b[^\n]{0,25}(?:" + _FNAME + r")", re.I)
+
 
 def _verifier_text(root):
     parts = [read_text(task_paths(root)["test.sh"]),
@@ -164,6 +195,53 @@ def check_task(name, root):
                              fix="Verify behaviour: run the agent's program / check its output / "
                                  "query the service, and keep source-greps only as an anti-cheat "
                                  "guard alongside the outcome test."))
+    # literal-only verifier (AST-precise revival of the dropped weak-verifier check):
+    # the grader executes nothing, recomputes nothing, and every scored test only
+    # compares against baked literal constants. Brittle (a correct-but-different output
+    # fails) and gameable if the agent can read the test. The whole-file functional/
+    # recompute/import scan keeps real functional verifiers out (the old regex check's
+    # 34 FPs). WARN candidate — confirm at runtime.
+    cls = assert_classify.classify_path(task_paths(root)["test_outputs.py"]).get("file", {})
+    if cls.get("all_literal_only"):
+        vals = cls.get("literal_values") or []
+        extra.append(finding(name, "tests", WARN, "literal-only-verifier",
+                             detail="every scored test compares the agent's output only against "
+                                    f"hardcoded literals {vals[:8]} — the verifier neither executes "
+                                    "the program, queries a service, nor recomputes the expected "
+                                    "value. Brittle and gameable; confirm the baked answers can't "
+                                    "be hardcoded by a no-op.",
+                             location="tests/test_outputs.py",
+                             fix="Recompute the expected value from the task inputs, run the agent's "
+                                 "program, or assert on behaviour — don't compare only to baked literals."))
+    # (B) wall-clock-dependent reward — measured elapsed time gates the verdict.
+    if WALLCLOCK.search(txt) and ELAPSED_ASSERT.search(txt):
+        extra.append(finding(name, "tests", WARN, "wall-clock-dependent-verifier",
+                             detail="verifier measures elapsed wall-clock time and asserts a "
+                                    "bound on it — the reward then depends on host speed / CI "
+                                    "load, so a correct-but-slow solution flakes. Brittle.",
+                             location="tests/",
+                             fix="Assert on the computed RESULT, not on how long it took; if "
+                                 "timing matters, use a generous margin or a logical (not "
+                                 "wall-clock) progress signal."))
+    # (C1) self-consistency — expected value sourced from the agent's own output tree.
+    if SELF_CONSISTENT.search(txt):
+        extra.append(finding(name, "tests", WARN, "verifier-self-consistent",
+                             detail="the verifier's expected/reference value is read from the "
+                                    "agent's own writable tree (/app, /workspace, /data, cwd) — "
+                                    "nothing external pins the answer, so it can be checking the "
+                                    "agent against itself. Confirm the expected value comes from "
+                                    "tests/ or is recomputed independently.",
+                             location="tests/",
+                             fix="Source the expected value from tests/ (verify-time) or recompute "
+                                 "it from the task inputs, not from a file the agent writes."))
+    # (C2) filename-encodes-answer — validity decided from a file's name, not content.
+    if FILENAME_ENCODES.search(txt):
+        extra.append(finding(name, "tests", WARN, "filename-encodes-answer",
+                             detail="the verifier appears to decide pass/validity from a file's "
+                                    "NAME (basename/stem matched against a validity label) rather "
+                                    "than its content — gameable (rename to match) and brittle.",
+                             location="tests/",
+                             fix="Decide validity from the file's CONTENT/behaviour, not its name."))
     if found:
         return [finding(name, "tests", PASS, "verifier-defended",
                         detail=f"verifier has anti-cheat defense(s): {found} — resists "

@@ -47,8 +47,12 @@ CURL_PIPE_SH = re.compile(r"\b(?:curl|wget)\b[^\n|]*\|\s*(?:sudo\s+)?(?:ba)?sh\b
 # the Harbor-mandated reward path: /logs/verifier/reward.txt holding 1 or 0.
 STD_REWARD_PATH = "/logs/verifier/reward.txt"
 REWARD_REDIRECT = re.compile(r">>?\s*([\"']?)(/?\S*reward\S*)\1", re.I)
-# a grading script COPY'd into the agent image (verify.py / grader.sh / check.py …)
-VERIFIERISH = re.compile(r"(verif|validat|grade|grader|judge|checker|scorer|oracle|mock)"
+# a grading script COPY'd into the agent image (verify.py / grader.sh / check.py …).
+# NOTE: `mock` is deliberately excluded — a mock/stub/fixture *generator*
+# (generate_mocks.py, mock_server.py) builds test data or stands up a fake service;
+# it is never the pass signal. Including it produced false positives (e.g.
+# sparse-hash-collision's generate_mocks.py).
+VERIFIERISH = re.compile(r"(verif|validat|grade|grader|judge|checker|scorer|oracle)"
                          r"\w*\.(py|sh)$", re.I)
 
 
@@ -330,6 +334,30 @@ def _copied_scripts(dockerfile_text):
     return out
 
 
+def _refs_agent_copy(base, inimg, harness):
+    """True if the harness invokes the AGENT-IMAGE copy of the grader — NOT a
+    same-named copy that lives under the verify-time mount.
+
+    The old `base in harness` substring test was path-blind: it fired when the
+    basename merely appeared inside a `/tests/.truth/verify_plot.py` path (the
+    verify-time copy the agent CANNOT write), producing false positives. We fix
+    that here: a full in-image-path match is conclusive; otherwise a bare-basename
+    reference counts only when at least one occurrence is NOT qualified by a
+    verify-time path (`/tests`, `.truth`)."""
+    if inimg and inimg in harness:
+        return True
+    hit = False
+    for ln in harness.splitlines():
+        if base not in ln:
+            continue
+        m = re.search(r"(\S*" + re.escape(base) + r")", ln)
+        token = m.group(1) if m else base
+        if "/tests" in token or ".truth" in token:
+            continue  # the verify-time copy, not the agent-image one
+        hit = True
+    return hit
+
+
 def _agent_writable_verifier(name, root, p):
     """A grading script COPY'd into the agent image that the verifier then invokes.
 
@@ -337,28 +365,46 @@ def _agent_writable_verifier(name, root, p):
     `python /app/verify.py` and greps SUCCESS — the agent (root, no USER drop)
     overwrites /app/verify.py with one that prints SUCCESS. The grader must live
     under tests/ (verify-time read-only mount), never in agent-writable space.
-    """
+
+    Two precision controls keep this from over-firing (validated against the
+    cognition delivery's confirmed-vs-refuted split):
+      - path-aware invocation (`_refs_agent_copy`): the harness must invoke the
+        AGENT-IMAGE copy, not a same-named verify-time copy (ots-tangled FP).
+      - directory copies resolve to the verifier FILE's in-image path, so a
+        `COPY svc/ /opt/sms-gateway/` whose harness only starts the SERVICE (not
+        the verifier-named file inside it) does not fire.
+    A verifier with an independent anti-cheat defense (recompute / mutated-rerun /
+    source-grep) is separately down-graded FAIL->WARN in aggregate.reconcile —
+    overwriting the copied script can't beat a defense the agent can't forge."""
     df = read_text(p["Dockerfile"])
     if not df.strip():
         return []
-    copied = [dest for srcs, dest in _copied_scripts(df)
-              if any(VERIFIERISH.search(os.path.basename(c)) for c in (srcs + [dest]))]
-    if not copied:
-        return []
     harness = read_text(p["test.sh"]) + "\n" + read_text(p["test_outputs.py"])
     solve = read_text(p["solve.sh"])
-    for dest in copied:
-        base = os.path.basename(dest.rstrip("/"))
-        # the verifier invokes the copied-in script, it's not under tests/, and the
-        # oracle doesn't (re)generate it (which would make it a legitimate artifact).
-        if base and base in harness and base not in solve and "/tests" not in dest:
-            return [finding(name, "anti_cheat", FAIL, "agent-writable-verifier",
-                            detail=f"Dockerfile copies `{dest}` into the agent image and "
-                                   f"tests/ invokes `{base}` to grade — the agent can "
-                                   "overwrite it to force a pass.",
-                            location="environment/Dockerfile",
-                            fix="Move the grading script into tests/ (verify-time mount); "
-                                "never invoke an agent-writable in-image script as the verifier.")]
+    for srcs, dest in _copied_scripts(df):
+        # the grading script(s) among this COPY — a verifier-named .py/.sh
+        vfiles = [c for c in (srcs + [dest])
+                  if VERIFIERISH.search(os.path.basename(c.rstrip("/")))]
+        if not vfiles:
+            continue
+        # a directory destination (`COPY a b /dir/` or multiple srcs): the grader
+        # file lands at dest/<basename(src)>, not at `dest` itself.
+        is_dir = dest.endswith("/") or len(srcs) > 1
+        for vf in vfiles:
+            b = os.path.basename(vf.rstrip("/"))
+            inimg = (dest.rstrip("/") + "/" + b) if is_dir else dest
+            # grader copied UNDER tests/ (verify-time mount) is the correct shape;
+            # the oracle (re)generating it at solve time makes it a real artifact.
+            if "/tests" in inimg or ".truth" in inimg or b in solve:
+                continue
+            if _refs_agent_copy(b, inimg, harness):
+                return [finding(name, "anti_cheat", FAIL, "agent-writable-verifier",
+                                detail=f"Dockerfile copies `{inimg}` into the agent image and "
+                                       f"tests/ invokes `{b}` to grade — the agent can "
+                                       "overwrite it to force a pass.",
+                                location="environment/Dockerfile",
+                                fix="Move the grading script into tests/ (verify-time mount); "
+                                    "never invoke an agent-writable in-image script as the verifier.")]
     return []
 
 
@@ -391,13 +437,44 @@ def _reward_pre_created(name, root, p):
     return out
 
 
+def _verifier_helper_baked(name, root, p, agent_writable_fired):
+    """A verifier/grader-named helper baked under environment/ (into the agent image)
+    AND referenced by the grading harness — a build-isolation smell: verifier logic
+    belongs under tests/ (verify-time mount), not in agent-writable space. WARN-level;
+    the hard `agent-writable-verifier` FAIL supersedes it, so skip when that fired."""
+    if agent_writable_fired:
+        return []
+    env = p["environment"]
+    if not os.path.isdir(env):
+        return []
+    harness = read_text(p["test.sh"]) + "\n" + read_text(p["test_outputs.py"])
+    solve = read_text(p["solve.sh"])
+    hits = []
+    for dirpath, _dirs, files in os.walk(env):
+        for fn in files:
+            if VERIFIERISH.search(fn) and fn in harness and fn not in solve:
+                hits.append(os.path.relpath(os.path.join(dirpath, fn), root))
+    hits = sorted(set(hits))
+    if not hits:
+        return []
+    return [finding(name, "anti_cheat", WARN, "verifier-helper-in-environment",
+                    detail=f"Verifier/grader-named helper(s) {hits} are baked under "
+                           "environment/ (into the agent image) and referenced by the grading "
+                           "harness — verifier logic should live under tests/ (verify-time "
+                           "mount), not in agent-writable space.",
+                    location=hits[0],
+                    fix="Move the grader/helper into tests/; keep verifier logic out of the agent image.")]
+
+
 def check_task(name, root):
     out = []
     p = task_paths(root)
     reflection = is_reflection_schema(load_toml(p["task.toml"])) if os.path.isfile(p["task.toml"]) else False
     if os.path.isfile(p["test.sh"]):
         out += _analyze_test_sh(p["test.sh"], name, reflection)
-    out += _agent_writable_verifier(name, root, p)
+    aw = _agent_writable_verifier(name, root, p)
+    out += aw
+    out += _verifier_helper_baked(name, root, p, bool(aw))
     out += _reward_pre_created(name, root, p)
     tdir = p["tests"]
     if os.path.isdir(tdir):

@@ -18,3 +18,12 @@ isolation-perimeter-validator,0,WARN,,ots,second5k-remediated,truth now under /t
 orbit-attestation-consolidator,0,WARN,,ots,first5k-remediated,goldens now under /tmp/verifier_goldens (verify-time) — good example
 schema-skew-audit,0,WARN,,ots,second5k-remediated,truth under /tests/.truth — good example
 shadow-fuzz-pipeline,0,WARN,,ots,second5k-remediated,no agent-readable truth leak in current snapshot — good example
+agent-writable-defended,0,WARN,,fixture,synthetic,grader COPYd into /app AND invoked but verifier independently recomputes (hard defense recompute-or-hash) — reconcile downgrades agent-writable FAIL->WARN; must NOT FAIL
+agent-writable-truth-copy,0,WARN,,fixture,synthetic,decoy grader COPYd to /opt but verifier invokes the /tests/.truth copy — path-aware match must NOT fire agent-writable (ots-tangled shape); residual WARN only
+agent-writable-mock-service,0,WARN,,fixture,synthetic,dir-copy of a service containing a verifier-named file; verifier exercises the service not the named module inside — must NOT fire agent-writable; residual WARN only
+chmod-not-a-guard,0,WARN,chmod-not-a-guard,fixture,synthetic,chmod 400 on a baked verifier-named file while agent is root — perms not a guard; WARN
+verifier-helper-in-environment,0,WARN,verifier-helper-in-environment,fixture,synthetic,verifier helper baked in environment/ and referenced by harness — build-isolation WARN
+wall-clock-dependent-verifier,0,WARN,wall-clock-dependent-verifier,fixture,synthetic,verifier asserts on measured elapsed wall-clock — brittle WARN
+verifier-self-consistent,0,WARN,verifier-self-consistent,fixture,synthetic,expected value read from the agent's own output tree — WARN
+filename-encodes-answer,0,WARN,filename-encodes-answer,fixture,synthetic,validity decided from a file basename — gameable/brittle WARN
+literal-only-verifier,0,WARN,literal-only-verifier,fixture,synthetic,verifier only compares agent output to baked literals (no exec/query/recompute) — AST literal-only WARN

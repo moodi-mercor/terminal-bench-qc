@@ -72,6 +72,15 @@ def reconcile(findings):
     # cheats, so cheat-vector candidates against it are suppressed deterministically —
     # no agent in the loop, so it can't cry wolf (check_verifier_defenses.py).
     defended = {f["task"] for f in findings if f.get("title") == "verifier-defended"}
+    # A subset of defenses actually defeats `agent-writable-verifier`: recompute /
+    # mutated-rerun / source-grep are independent of the copied script, so the agent
+    # cannot forge them. `re-exec-agent` is NOT one of them — re-running the agent's
+    # program is precisely the hole when that program IS the copied-in grader. So the
+    # agent-writable down-grade keys on these HARD defenses only (the broader
+    # `defended` set still suppresses the static analyst's semantic-cheat-vector).
+    HARD = ("recompute-or-hash", "mutated-rerun", "source-grep-guard")
+    hard_defended = {f["task"] for f in findings if f.get("title") == "verifier-defended"
+                     and any(d in (f.get("detail") or "") for d in HARD)}
     META = ("verify-refuted", "verify-confirm", "cheat-vector-confirmed", "cheat-vector-refuted")
     out, dropped = [], 0
     for f in findings:
@@ -79,6 +88,24 @@ def reconcile(findings):
             continue
         if (f["task"], f.get("title")) in refuted:
             dropped += 1
+            continue
+        # MECHANICAL precision gate: `agent-writable-verifier` (the agent can
+        # overwrite a copied-in grading script) is only a working cheat if the
+        # overwrite actually forces a pass. When the same verifier has an
+        # independent anti-cheat defense (recompute / mutated-rerun / source-grep —
+        # check_verifier_defenses `verifier-defended`), the agent cannot forge that
+        # defense, so the FAIL is a candidate, not a proof: down-grade to WARN for
+        # the runtime gate to confirm. Validated on the cognition delivery — every
+        # runtime-CONFIRMED hack was `verifier-undefended`; the defended ones
+        # (daemon-cert-pipeline, mpi-thread-thrashing, stale-ddp-ensemble-state)
+        # were all refuted. Zero recall loss, removes the dominant FP class.
+        if (f.get("title") == "agent-writable-verifier" and f.get("severity") == FAIL
+                and f["task"] in hard_defended):
+            f = {**f, "severity": WARN,
+                 "detail": (f.get("detail", "") + " [reconcile: verifier has an "
+                            "independent anti-cheat defense (verifier-defended) the agent "
+                            "cannot forge — down-graded FAIL->WARN; confirm at runtime.]")}
+            out.append(f)
             continue
         # An ANALYTICAL adversarial cheat-vector is a CANDIDATE, not a verdict:
         # raw, it over-flagged (precision 0.22 as FAIL) — reading alone can't tell a
@@ -134,20 +161,70 @@ def _flat(s):
     return " ".join((s or "").split())
 
 
+# Triage priority, by defect CLASS (independent of FAIL/WARN):
+#   P0  the verifier can be PASSED without doing the work, or the answer/verifier is
+#       readable/writable by the agent (confirmed-hackable / leak) — fix first.
+#   P1  brittle / weak verifier — rejects correct work or verifies weakly.
+#   P2  hygiene / build-isolation / metadata — clean up, low exploit risk.
+P0_TITLES = {
+    "agent-writable-verifier", "truth-baked-verifier-reads", "tests-bake-verifier-reads",
+    "reference-solve-reads-truth", "unconditional-reward", "dockerfile-copies-solution",
+    "dockerfile-copies-tests", "test-imports-solution", "reward-pre-created",
+    "secret-baked-in-image", "semantic-cheat-vector", "cheat-confirmed",
+}
+P1_TITLES = {
+    "source-match-verification", "verifier-undefended", "wall-clock-dependent-verifier",
+    "filename-encodes-answer", "verifier-self-consistent", "literal-only-verifier",
+    "degenerate-integrity-guard", "brittle-string-match", "existence-only-check",
+    "no-assertion-test", "vacuous-test", "swallowed-assertion", "weak-assertion",
+    "skipped-scored-test", "empty-parametrize", "golden-patch-mismatch", "flaky-test",
+    "test-sh-set-e-reward-abort", "test-sh-swallows-failure", "agent-writable-reward-signal",
+    "verifier-reads-config-spec", "truth-named-baked", "test-runtime-install",
+    "reward-path-nonstandard", "tests-bake-unread", "untested-requirement",
+}
+P2_TITLES = {
+    "chmod-not-a-guard", "verifier-helper-in-environment", "dockerfile-copies-env-tests",
+    "dockerfile-copies-hint-file", "missing-dockerignore", "broad-chmod",
+    "verifier-reads-instruction-input",
+}
+
+
+def priority_of(f):
+    """Map a finding to P0/P1/P2 by class; fall back on severity for unlisted titles
+    (FAIL -> P0, WARN -> P2). P-findings (PASS) get '' (not a defect)."""
+    t = f.get("title", "")
+    if t in P0_TITLES:
+        return "P0"
+    if t in P1_TITLES:
+        return "P1"
+    if t in P2_TITLES:
+        return "P2"
+    # Unlisted findings fall back by severity + area. A FAIL is P0 only when it is an
+    # exploit/leak class (anti_cheat / tests / dataset); a blocking-but-not-hackable
+    # FAIL (missing file, bad metadata, bad Dockerfile) is P1, not P0.
+    if f.get("severity") == FAIL:
+        return "P0" if f.get("area") in ("anti_cheat", "tests", "dataset") else "P1"
+    if f.get("severity") == WARN:
+        return "P2"
+    return ""
+
+
 def write_defects_csv(findings, path):
-    """One row per flagged finding: the defect + WHY it failed + the fix + which
-    layer caught it. This is the "what's wrong and why" export — defects only
-    (FAIL and WARN), FAIL first. PASS findings are omitted."""
-    order = {FAIL: 0, WARN: 1}
+    """One row per flagged finding: priority + the defect + WHY it failed + the fix +
+    which layer caught it. The "what's wrong and why" export — defects only (FAIL and
+    WARN), sorted P0 -> P2 then FAIL-first. PASS findings are omitted."""
+    sev_order = {FAIL: 0, WARN: 1}
+    pri_order = {"P0": 0, "P1": 1, "P2": 2, "": 3}
     flagged = sorted((f for f in findings if f.get("severity") in (FAIL, WARN)),
-                     key=lambda f: (order[f["severity"]], f["task"], f.get("area", "")))
+                     key=lambda f: (pri_order[priority_of(f)], sev_order[f["severity"]],
+                                    f["task"], f.get("area", "")))
     with open(path, "w", newline="") as fh:
         w = csv.writer(fh)
-        w.writerow(["task", "layer", "area", "severity", "defect",
+        w.writerow(["priority", "task", "layer", "area", "severity", "defect",
                     "location", "reason", "fix"])
         for f in flagged:
-            w.writerow([f["task"], layer_of(f), f.get("area", ""), f["severity"],
-                        f.get("title", ""), f.get("location", ""),
+            w.writerow([priority_of(f), f["task"], layer_of(f), f.get("area", ""),
+                        f["severity"], f.get("title", ""), f.get("location", ""),
                         _flat(f.get("detail", "")), _flat(f.get("fix", ""))])
     return len(flagged)
 

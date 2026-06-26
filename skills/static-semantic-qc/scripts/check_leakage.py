@@ -369,6 +369,19 @@ def _truth_bake(root, name):
 
     read_hits = [] if rederivation else [p for p in read_hits if is_truth_candidate(p)]
     truthy = sorted(p for p in baked if TRUTHY.search(os.path.basename(p)))
+    # A non-truthy CONFIG/SPEC file (.json/.yaml/.toml/.ini/.conf/.env) the verifier
+    # reads is usually the TARGET the agent must satisfy (a version to propagate, an
+    # expected config to produce) — i.e. task spec, not a baked answer key. Real OTS
+    # FPs: stale-ddp-ensemble-state `/app/experiment.json` (target version), daemon-
+    # cert-pipeline `/etc/buildkit/prod.yaml` (expected config). Down-grade these to
+    # WARN (confirm by reading) rather than FAIL. Truthy-named configs (expected.json,
+    # *.truth.json) still FAIL via the TRUTHY split, and non-config answer files
+    # (.txt/.csv such as dra-calibration's valid_initial_count.txt) are unaffected.
+    CONFIG_EXT = (".json", ".yaml", ".yml", ".toml", ".ini", ".cfg",
+                  ".conf", ".env", ".properties")
+    config_spec = sorted(p for p in read_hits if p.lower().endswith(CONFIG_EXT)
+                         and not TRUTHY.search(os.path.basename(p)))
+    read_hits = [p for p in read_hits if p not in config_spec]
     if read_hits:
         # FP rule: if every read path is instruction-referenced, it is task INPUT
         # the agent is told about (e.g. a "provided control file"), not hidden
@@ -389,6 +402,15 @@ def _truth_bake(root, name):
                         location="environment/Dockerfile",
                         fix="Move the truth artifact under tests/ (verify-time mount); "
                             "remove the agent-visible bake; re-run oracle.")]
+    if config_spec:
+        return [finding(name, "anti_cheat", WARN, "verifier-reads-config-spec",
+                        detail=f"Verifier reads build-baked config/spec file(s) {config_spec} "
+                               "the agent can also see. Usually the TARGET the agent must "
+                               "satisfy (a config/version to propagate), not a baked answer "
+                               "key — confirm it does not encode the expected OUTPUT.",
+                        location="environment/Dockerfile",
+                        fix="If it is task spec/config, fine; if it holds the expected answer, "
+                            "move it under tests/ (verify-time) and re-run the oracle.")]
     if truthy:
         return [finding(name, "anti_cheat", WARN, "truth-named-baked",
                         detail=f"Truth-named artifact(s) baked into agent-visible paths "
@@ -486,6 +508,43 @@ def _baked_secrets(root, name):
                         "deliberately-planted secret for a recovery task).")]
 
 
+# A `chmod 400/000` (owner-read-only / no-access) used to "protect" a baked answer
+# or grader. Worthless when the agent runs as root (no USER drop): root reads
+# regardless of mode and can chmod it back. The verifier/truth must live under tests/
+# (verify-time mount) or be regenerated — perms are not an isolation boundary.
+CHMOD_GUARD = re.compile(r"\bchmod\s+(?:-[a-zA-Z]+\s+)*0?(?:400|000|440|040|200)\s+([^\s;&|]+)")
+USER_DROP = re.compile(r"^\s*USER\s+(?!root\b)\S", re.M | re.I)
+# verifier/grader-named script, for the "protected grader" case
+_GRADERISH = re.compile(r"(verif|validat|grade|grader|judge|checker|scorer|oracle)", re.I)
+
+
+def _chmod_not_a_guard(root, name):
+    """chmod 400/000 of a truth/grader file while the agent is root — decorative."""
+    parts = _build_parts(root)
+    df = parts.get("Dockerfile", "")
+    if USER_DROP.search(df):
+        return []  # agent drops privileges — perms can actually protect
+    flagged = []
+    for fn, txt in parts.items():
+        for m in CHMOD_GUARD.finditer(txt):
+            tgt = m.group(1).strip().strip('"\'')
+            base = os.path.basename(tgt.rstrip("/"))
+            if "/tests" in tgt or ".truth" in tgt:
+                continue  # verify-time mount, not agent-readable space
+            if TRUTHY.search(base) or _GRADERISH.search(base):
+                flagged.append(tgt)
+    flagged = sorted(set(flagged))
+    if not flagged:
+        return []
+    return [finding(name, "anti_cheat", WARN, "chmod-not-a-guard",
+                    detail=f"Build `chmod 400/000` on answer/grader file(s) {flagged} while "
+                           "the agent runs as root (no USER drop) — root reads them regardless "
+                           "of mode and can restore it, so the permission is not real protection.",
+                    location="environment/Dockerfile",
+                    fix="Move the truth/grader under tests/ (verify-time mount) or regenerate it "
+                        "at verify time; do not rely on file permissions to hide it from a root agent.")]
+
+
 def check_task(name, root):
     out = []
     out += _dockerfile_copies(root, name)
@@ -493,6 +552,7 @@ def check_task(name, root):
     out += _truth_bake(root, name)
     out += _reference_solve_reads_truth(root, name)
     out += _baked_secrets(root, name)
+    out += _chmod_not_a_guard(root, name)
     # keep both reported dimensions populated with a PASS sentinel when clean
     areas = {f["area"] for f in out}
     if "dockerfile" not in areas:
