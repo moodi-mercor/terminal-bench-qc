@@ -67,7 +67,7 @@ def qc_one(name, root):
             findings.append({"task": name, "area": "structure", "severity": "WARN",
                              "title": "qc-gate-error", "detail": f"{mod.__name__}: {e}"})
     findings, _ = aggregate.reconcile(findings)
-    return aggregate.bucketize(findings)
+    return aggregate.bucketize(findings), findings
 
 
 def label(tid, bk, wk, run_tag, h):
@@ -113,6 +113,11 @@ def main():
     rf = open(results_path, "a")
     if new_results:
         rf.write("task,bucket,status,remediation,priority,confidence,label\n")
+    findings_path = os.path.join(args.out, "findings.csv")
+    new_findings = not os.path.exists(findings_path)
+    ff = open(findings_path, "a")
+    if new_findings:
+        ff.write("task,area,severity,priority,title\n")
     counts = {"labeled": 0, "skipped": 0, "fail": 0}
     bk_hist = {}
     lock = threading.Lock()
@@ -123,16 +128,21 @@ def main():
         troot = os.path.join(work, name)
         try:
             studio_pull.pull_task(rkey, t, work)
-            bk = qc_one(name, troot)
+            bk, findings = qc_one(name, troot)
             res = "dry"
             if args.apply:
                 res = label(tid, bk, wk, args.run_tag, h)
+            flagged = [f for f in findings if f.get("severity") in ("FAIL", "WARN")]
             with lock:
                 bk_hist[bk["bucket"]] = bk_hist.get(bk["bucket"], 0) + 1
                 counts["skipped" if res == "skipped" else
                        "labeled" if res in ("ok", "dry") else "fail"] += 1
                 rf.write(f"{name},{bk['bucket']},{bk['status']},{bk['remediation']},"
                          f"{bk['priority']},{bk['confidence']},{res}\n"); rf.flush()
+                for f in flagged:
+                    ff.write(f"{name},{f.get('area','')},{f['severity']},"
+                             f"{aggregate.priority_of(f)},{f.get('title','')}\n")
+                ff.flush()
                 with open(done_path, "a") as df:
                     df.write(name + "\n")
         except Exception as e:
@@ -150,7 +160,7 @@ def main():
         futs = [ex.submit(handle, t) for t in todo]
         for _ in as_completed(futs):
             pass
-    rf.close()
+    rf.close(); ff.close()
     print(f"DONE. processed {len(todo)} | buckets={bk_hist} | {counts}", flush=True)
 
 
