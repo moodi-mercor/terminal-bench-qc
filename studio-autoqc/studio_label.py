@@ -29,7 +29,7 @@ import requests
 
 API = "https://api.studio.mercor.com"
 WORLD = "world_2c7cdb23737845ad83a9acfa1aa8c25b"
-QC_KEYS = ("qc_bucket", "qc_remediation", "qc_priority", "qc_confidence", "qc_run")
+QC_KEYS = ("qc_bucket", "qc_status", "qc_remediation", "qc_priority", "qc_confidence", "qc_run")
 
 
 def _env(name):
@@ -71,7 +71,12 @@ def load_buckets(spec):
 
 
 def desired(row, run_tag):
-    return {"qc_bucket": row["bucket"], "qc_remediation": row.get("remediation", ""),
+    # qc_status may be absent in older CSVs — derive from bucket as a fallback.
+    rollup = {"ship": "passing", "fixable": "needs-fixing",
+              "total": "defective-hard", "review": "needs-review"}
+    status = row.get("status") or rollup.get(row.get("bucket", ""), "")
+    return {"qc_bucket": row["bucket"], "qc_status": status,
+            "qc_remediation": row.get("remediation", ""),
             "qc_priority": row.get("priority", ""), "qc_confidence": row.get("confidence", ""),
             "qc_run": run_tag}
 

@@ -294,7 +294,11 @@ def bucketize(task_findings, behavioral=None):
         else:
             bucket = "ship"     # clean or P2 hygiene only
     needs_behavioral = behavioral is None and bucket in ("fixable", "review")
-    tags = [f"qc:{bucket}"]
+    # human-facing rollup status (the QC-outcome vocabulary): passing / needs-fixing /
+    # defective-hard (broken, total failure) / needs-review (advisory, unconfirmed).
+    qc_status = {"ship": "passing", "fixable": "needs-fixing",
+                 "total": "defective-hard", "review": "needs-review"}.get(bucket, "")
+    tags = [f"qc:{bucket}", f"qc:{qc_status}"] if qc_status else [f"qc:{bucket}"]
     if remediation:
         tags.append(f"qc:{remediation}" if bucket == "total" else f"qc:fix-{remediation}")
     if priority:
@@ -302,8 +306,8 @@ def bucketize(task_findings, behavioral=None):
     tags.append("qc:confirmed" if confirmed else "qc:candidate")
     if needs_behavioral:
         tags.append("qc:needs-behavioral")
-    return {"bucket": bucket, "remediation": remediation, "priority": priority,
-            "confidence": "confirmed" if confirmed else "candidate",
+    return {"bucket": bucket, "status": qc_status, "remediation": remediation,
+            "priority": priority, "confidence": "confirmed" if confirmed else "candidate",
             "needs_behavioral": needs_behavioral, "tags": tags}
 
 
@@ -317,9 +321,9 @@ def write_buckets_csv(tasks, path, behavioral_map=None):
         rows.append((task, bucketize(flat, behavioral_map.get(task))))
     with open(path, "w", newline="") as fh:
         w = csv.writer(fh)
-        w.writerow(["task", "bucket", "remediation", "priority", "confidence", "tags"])
+        w.writerow(["task", "bucket", "status", "remediation", "priority", "confidence", "tags"])
         for task, bk in sorted(rows):
-            w.writerow([task, bk["bucket"], bk["remediation"], bk["priority"],
+            w.writerow([task, bk["bucket"], bk["status"], bk["remediation"], bk["priority"],
                         bk["confidence"], " ".join(bk["tags"])])
     return Counter(bk["bucket"] + (f"/{bk['remediation']}" if bk["remediation"] else "")
                    for _, bk in rows)
