@@ -545,9 +545,83 @@ def _chmod_not_a_guard(root, name):
                         "at verify time; do not rely on file permissions to hide it from a root agent.")]
 
 
+# a .pyc whose name maps to a generator / answer-producing / solution script — the
+# decompiled bytecode hands the agent the answer logic (or baked-in constants).
+_SENSITIVE_PY = re.compile(r"(generate|gen_|mutate|make_|seed|solve|answer|truth|"
+                           r"golden|oracle|expected|grade|verif|validat|setup|build)", re.I)
+# build-time markers
+_RUNS_PY = re.compile(r"\bpython3?\b[^\n]*\.py\b|\bpython3?\s+-m\s+\w", re.I)
+_RM_PY = re.compile(r"\brm\s+(?:-\w+\s+)*([^\s;&|]*\.py)\b")
+_PYC_CLEAN = re.compile(r"__pycache__|\*\.pyc|\bpy3?clean\b|PYTHONDONTWRITEBYTECODE|"
+                        r"-name\s+['\"]?\*\.pyc", re.I)
+
+
+def _pycache_leak(root, name):
+    """Compiled-bytecode leak: a build-time generator leaves __pycache__/*.pyc that
+    survives even after its .py source is removed — the agent can read/decompile the
+    .pyc to recover the answer-generation logic (or baked constants). Two signals:
+      (1) a .pyc / __pycache__ physically shipped under the agent-readable tree;
+      (2) the build runs a python generator AND removes the .py source but never
+          cleans __pycache__/*.pyc (and PYTHONDONTWRITEBYTECODE is unset)."""
+    out = []
+    # (1) shipped .pyc / __pycache__ in agent-readable space (not tests/ verify-time,
+    # not solution/ oracle-only).
+    shipped = []
+    for dp, dirs, files in os.walk(root):
+        rel = os.path.relpath(dp, root)
+        top = rel.split(os.sep)[0]
+        if top in ("tests", "solution", ".git"):
+            dirs[:] = []
+            continue
+        if os.path.basename(dp) == "__pycache__":
+            shipped.append(rel)
+        for f in files:
+            if f.endswith(".pyc"):
+                shipped.append(os.path.relpath(os.path.join(dp, f), root))
+    if shipped:
+        sensitive = [p for p in shipped if _SENSITIVE_PY.search(os.path.basename(p))]
+        sev = FAIL if sensitive else WARN
+        out.append(finding(name, "anti_cheat", sev, "pycache-baked-in-image",
+                           detail=f"compiled bytecode shipped in the agent image: {sorted(set(shipped))[:6]}"
+                                  + (f" (incl. answer/generator script(s) {sorted(set(sensitive))[:4]} "
+                                     "— decompilable to the generation logic/constants)" if sensitive else "")
+                                  + ". A .pyc survives `rm`-ing its .py source and is agent-readable.",
+                           location=sorted(shipped)[0],
+                           fix="Remove __pycache__/*.pyc from the build context and the image "
+                               "(`find / -name '*.pyc' -delete` after the build, or set "
+                               "PYTHONDONTWRITEBYTECODE=1); keep generators out of the agent image."))
+    # (2) build generates then removes the source but leaves the pyc. Strip comments
+    # first — a `# leaves __pycache__` comment must NOT read as a real pyc cleanup
+    # (and a commented-out `rm x.py` must not read as a real removal).
+    raw = "\n".join(_build_parts(root).values())
+    code_lines = []
+    for ln in raw.splitlines():
+        s = ln.strip()
+        if s.startswith("#"):
+            continue
+        code_lines.append(ln.split(" #", 1)[0])
+    btxt = "\n".join(code_lines)
+    rm_py = _RM_PY.findall(btxt)
+    # only a GENERATOR/answer-producing source matters — removing a generic helper .py
+    # isn't a leak. Gating on a sensitive name keeps this from firing on ~44% of tasks.
+    rm_gen = [p for p in rm_py if _SENSITIVE_PY.search(os.path.basename(p))]
+    if _RUNS_PY.search(btxt) and rm_gen and not _PYC_CLEAN.search(btxt):
+        out.append(finding(name, "anti_cheat", WARN, "pycache-residue-after-script-removal",
+                           detail=f"the build runs a python generator and then removes its source "
+                                  f"({sorted(set(rm_gen))[:4]}) but never cleans __pycache__/*.pyc "
+                                  "and does not set PYTHONDONTWRITEBYTECODE — the compiled bytecode "
+                                  "of the (hidden) generator survives in the image, agent-readable "
+                                  "and decompilable. CANDIDATE — confirm by building + `find /app -name '*.pyc'`.",
+                           location="environment/Dockerfile",
+                           fix="After running the generator, delete its __pycache__ (`rm -rf **/__pycache__`, "
+                               "`find / -name '*.pyc' -delete`) or build with PYTHONDONTWRITEBYTECODE=1."))
+    return out
+
+
 def check_task(name, root):
     out = []
     out += _dockerfile_copies(root, name)
+    out += _pycache_leak(root, name)
     out += _tests_bake(root, name)
     out += _truth_bake(root, name)
     out += _reference_solve_reads_truth(root, name)

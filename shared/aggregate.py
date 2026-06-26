@@ -171,6 +171,7 @@ P0_TITLES = {
     "reference-solve-reads-truth", "unconditional-reward", "dockerfile-copies-solution",
     "dockerfile-copies-tests", "test-imports-solution", "reward-pre-created",
     "secret-baked-in-image", "semantic-cheat-vector", "cheat-confirmed",
+    "pycache-baked-in-image",
 }
 P1_TITLES = {
     "source-match-verification", "verifier-undefended", "wall-clock-dependent-verifier",
@@ -181,6 +182,7 @@ P1_TITLES = {
     "test-sh-set-e-reward-abort", "test-sh-swallows-failure", "agent-writable-reward-signal",
     "verifier-reads-config-spec", "truth-named-baked", "test-runtime-install",
     "reward-path-nonstandard", "tests-bake-unread", "untested-requirement",
+    "pycache-residue-after-script-removal",
 }
 P2_TITLES = {
     "chmod-not-a-guard", "verifier-helper-in-environment", "dockerfile-copies-env-tests",
@@ -216,7 +218,8 @@ def priority_of(f):
 RELOCATE = {"agent-writable-verifier", "truth-baked-verifier-reads", "tests-bake-verifier-reads",
             "verifier-helper-in-environment", "chmod-not-a-guard", "reward-pre-created",
             "dockerfile-copies-tests", "dockerfile-copies-solution", "reference-solve-reads-truth",
-            "secret-baked-in-image", "dockerfile-copies-env-tests"}
+            "secret-baked-in-image", "dockerfile-copies-env-tests",
+            "pycache-baked-in-image", "pycache-residue-after-script-removal"}
 STRENGTHEN = {"literal-only-verifier", "source-match-verification", "verifier-undefended",
               "filename-encodes-answer", "wall-clock-dependent-verifier", "verifier-self-consistent",
               "existence-only-check", "no-assertion-test", "vacuous-test", "swallowed-assertion",

@@ -27,3 +27,4 @@ wall-clock-dependent-verifier,0,WARN,wall-clock-dependent-verifier,fixture,synth
 verifier-self-consistent,0,WARN,verifier-self-consistent,fixture,synthetic,expected value read from the agent's own output tree — WARN
 filename-encodes-answer,0,WARN,filename-encodes-answer,fixture,synthetic,validity decided from a file basename — gameable/brittle WARN
 literal-only-verifier,0,WARN,literal-only-verifier,fixture,synthetic,verifier only compares agent output to baked literals (no exec/query/recompute) — AST literal-only WARN
+pycache-leak,1,FAIL,pycache-baked-in-image,fixture,synthetic,build runs+rm's a generator but leaves __pycache__/*.pyc (decompilable to the answer); also ships the .pyc
