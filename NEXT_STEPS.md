@@ -15,12 +15,26 @@ Detectors/labelers committed on `main` (`a208e0b`…`27d3d0e`). Tools: `studio_l
 
 ## Phase 1 — Close the labeling loop
 1. Let `tb-fullqc-monitor` reach 13,433/13,433, then **disable the monitor**.
-2. **Behavioral run** (oracle=1 / no-op=0 / auto-cheat) on the non-passing set — start with
-   the 749 P0 + 1,761 fixable, then the review pile. Feed it the `gen_cheat_harness.py`
-   probes. Drop the results as `behavioral_signals.json` so `aggregate.bucketize` promotes:
-   - genuinely broken → `qc_status=defective-hard`, `qc_confidence=confirmed`
-   - cheat passes → confirmed reward-hack
-   - else → confirmed fixable / clears the review candidate.
+2. **Behavioral run — CLOUD path (confirmed feasible, not local builds).** Lighthouse/Harbor
+   grades on Modal; signals live on trajectories, not task custom_fields.
+   - **Batch 1 — oracle + no-op (749 P0 first):** `POST /orchestration/trajectories/batch`
+     with the `validate_patch` agent `agent_ec6f92015c4447d3a62f3dbf0f341a93`
+     (grades empty→expect 0, golden `solution/solve.sh`→expect 1; $0 LLM tokens, ~2 min/task,
+     ~25 concurrent CPU-hrs for 749). Get P0 IDs via
+     `POST /querier/task-ids {SQL: qc_priority='P0'}` (749, confirmed). Each entry needs
+     task_id + orchestrator_id/version + agent_id/version; **world default_orchestrator_ids is
+     EMPTY → fetch a campaign orchestrator first.** Batch create is rate-limited 5/min, max
+     50k/batch. Monitor `GET /trajectory-batches/{id}` + `GET /trajectories/batch/{id}`; read
+     `trajectory_output.validation_passed / empty_score / golden_score`.
+   - **Batch 2 — cheat confirmation (DESTRUCTIVE, subset only):** stage the auto-cheat into the
+     snapshot (`POST /snapshots/task/{id}/update`, file `filesystem/solution/solve.sh`) then run
+     an oracle-only agent (`harbor_agent: oracle`, `validate_patch:false`); `score=1.0` = confirmed
+     reward-hack. Mutates the golden ref → do on clones/scratch or re-upload original after. Scope
+     to the static reward-hack flags only.
+   - Map results into `behavioral_signals.json` → `aggregate.bucketize` promotes broken→
+     `defective-hard`+`confirmed`, cheat-pass→confirmed reward-hack, else clears the candidate.
+   - Note: golden=1 reuse is NOT available (tasks have empty final_score/has_gt_grade — no prior
+     golden runs stored); must generate via Batch 1.
 
 ## Phase 2 — Remediate (where the QC pays off)
 3. **Pycache systemic fix (~6,652 — biggest win):** bulk-add `ENV PYTHONDONTWRITEBYTECODE=1`
