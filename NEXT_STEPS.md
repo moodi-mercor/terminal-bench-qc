@@ -13,6 +13,12 @@ Detectors/labelers committed on `main` (`a208e0b`…`27d3d0e`). Tools: `studio_l
 
 ---
 
+## DONE (2026-06-28)
+- Static QC + labels over all 13,433 (custom_fields qc_bucket/status/priority/remediation).
+- **Behavioral oracle+no-op over all 13,433** (6 validate_patch batches, $0 tokens):
+  **2,510 broken oracles** (golden=0) → qc_status=defective-hard/confirmed; 10,921 healthy;
+  0 no-op-passes. 5 SQL dashboards + "QC: broken oracles (confirmed)" live in RLS.
+
 ## Phase 1 — Close the labeling loop
 1. Let `tb-fullqc-monitor` reach 13,433/13,433, then **disable the monitor**.
 2. **Behavioral run — CLOUD path (confirmed feasible, not local builds).** Lighthouse/Harbor
