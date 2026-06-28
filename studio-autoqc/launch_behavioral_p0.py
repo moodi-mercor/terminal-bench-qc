@@ -18,6 +18,7 @@ import argparse
 import json
 import os
 import sys
+import time
 import requests
 
 API = "https://api.studio.mercor.com"
@@ -42,36 +43,53 @@ def headers():
             "X-Company-Id": COMPANY, "Content-Type": "application/json"}
 
 
-def p0_task_ids():
+def task_ids(where):
     r = requests.post(f"{API}/querier/task-ids", headers=headers(), timeout=120,
-                      data=json.dumps({"query": "SELECT task_id FROM tasks WHERE world_id = "
-                                       f"'{WORLD}' AND custom_fields->>'qc_priority' = 'P0'"}))
+                      data=json.dumps({"query": f"SELECT task_id FROM tasks WHERE world_id = "
+                                       f"'{WORLD}' AND {where}"}))
     r.raise_for_status()
     return r.json()["task_ids"]
+
+
+def post_batch(name, ids):
+    entries = [{"task_id": t, "orchestrator_id": ORCH_ID, "orchestrator_version": ORCH_VER,
+                "agent_id": AGENT_ID, "agent_version": AGENT_VER, "system_prompt": ""} for t in ids]
+    payload = {"trajectory_batch_name": name, "orchestrator_ids": [ORCH_ID],
+               "judge_ids": [], "platform_id": PLATFORM, "trajectory_request": entries}
+    r = requests.post(f"{API}/orchestration/trajectories/batch", headers=headers(),
+                      data=json.dumps(payload), timeout=300)
+    return r
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--launch", action="store_true")
     ap.add_argument("--name", default="QC behavioral P0 oracle+noop")
+    ap.add_argument("--where", default="custom_fields->>'qc_priority' = 'P0'",
+                    help="SQL WHERE predicate selecting target tasks")
+    ap.add_argument("--chunk", type=int, default=0, help="tasks per batch (0 = single batch)")
+    ap.add_argument("--ids-file", default=None, help="read task_ids from a file (bypasses the 5k querier cap)")
     args = ap.parse_args()
-    ids = p0_task_ids()
-    entries = [{"task_id": t, "orchestrator_id": ORCH_ID, "orchestrator_version": ORCH_VER,
-                "agent_id": AGENT_ID, "agent_version": AGENT_VER, "system_prompt": ""} for t in ids]
-    payload = {"trajectory_batch_name": args.name, "orchestrator_ids": [ORCH_ID],
-               "judge_ids": [], "platform_id": PLATFORM, "trajectory_request": entries}
-    print(f"P0 tasks: {len(ids)} | agent {AGENT_ID} v{AGENT_VER} (validate_patch) | "
-          f"orchestrator {ORCH_ID} v{ORCH_VER} (no-op)")
-    if not args.launch:
-        print("DRY-RUN. first entry:", json.dumps(entries[0]))
-        return
-    r = requests.post(f"{API}/orchestration/trajectories/batch", headers=headers(),
-                      data=json.dumps(payload), timeout=180)
-    if r.status_code in (200, 201):
-        b = r.json()
-        print("LAUNCHED batch:", b.get("trajectory_batch_id"), "status:", b.get("batch_launch_status"))
+    if args.ids_file:
+        ids = [l.strip() for l in open(args.ids_file) if l.strip()]
     else:
-        print("FAILED", r.status_code, r.text[:400])
+        ids = task_ids(args.where)
+    print(f"target tasks: {len(ids)} | agent {AGENT_ID} v{AGENT_VER} (validate_patch) | "
+          f"orchestrator {ORCH_ID} v{ORCH_VER} (no-op)")
+    chunk = args.chunk or len(ids)
+    chunks = [ids[i:i + chunk] for i in range(0, len(ids), chunk)]
+    print(f"{len(chunks)} batch(es) of up to {chunk}")
+    if not args.launch:
+        print("DRY-RUN."); return
+    for i, c in enumerate(chunks, 1):
+        nm = args.name if len(chunks) == 1 else f"{args.name} [{i}/{len(chunks)}]"
+        r = post_batch(nm, c)
+        if r.status_code in (200, 201):
+            print(f"  LAUNCHED [{i}/{len(chunks)}] {len(c)} tasks ->", r.json().get("trajectory_batch_id"))
+        else:
+            print(f"  FAILED [{i}/{len(chunks)}]", r.status_code, r.text[:300])
+        if i < len(chunks):
+            time.sleep(15)  # 5/min batch-create rate limit
 
 
 if __name__ == "__main__":
