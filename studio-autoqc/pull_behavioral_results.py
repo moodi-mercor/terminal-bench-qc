@@ -34,17 +34,19 @@ def key():
 def main():
     global H
     ap = argparse.ArgumentParser()
-    ap.add_argument("batch_id")
+    ap.add_argument("batch_id", nargs="+")
     ap.add_argument("--out", default="_local/behavioral_p0")
+    ap.add_argument("--workers", type=int, default=16)
     args = ap.parse_args()
     os.makedirs(args.out, exist_ok=True)
     H = {"Authorization": f"Bearer {key()}",
          "X-Campaign-Id": "camp_4e196b1414a1499db54b43233104b0a7",
          "X-Company-Id": "comp_2fa4115109d741cd94a3c409ed89e61f",
          "Content-Type": "application/json"}
-    lst = requests.get(f"{API}/trajectories/batch/{args.batch_id}", headers=H, timeout=120).json()
-    trajs = lst["trajectories"]
-    print(f"batch has {len(trajs)} trajectories; fetching outputs ...")
+    trajs = []
+    for bid in args.batch_id:
+        trajs += requests.get(f"{API}/trajectories/batch/{bid}", headers=H, timeout=120).json()["trajectories"]
+    print(f"{len(args.batch_id)} batch(es), {len(trajs)} trajectories; fetching outputs ...")
 
     def fetch(tr):
         tid = tr["trajectory_id"]
@@ -58,7 +60,7 @@ def main():
                 "tests_passed": o.get("tests_passed"), "tests_total": o.get("tests_total")}
 
     rows = []
-    with ThreadPoolExecutor(max_workers=16) as ex:
+    with ThreadPoolExecutor(max_workers=args.workers) as ex:
         for f in as_completed([ex.submit(fetch, t) for t in trajs]):
             rows.append(f.result())
 
