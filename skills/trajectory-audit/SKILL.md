@@ -59,6 +59,7 @@ Batch ── Trajectory (one attempt) ── final_score (0/1)
 | **2 · Triage** | deterministic: split-score tasks, all-fail tasks, any test that fails across almost every attempt+model → ranked candidates | no | `triage.py` |
 | **2b · Difficulty** | deterministic: empirical **avg@8** per (task, model) from the scores → flag tasks the frontier model solves > 50% (too easy), and recorded-vs-actual `avg_at_8` mismatches | no | `difficulty.py` |
 | **2c · Diff signals** | deterministic, per-attempt: **noop-pass** (passed on an empty diff), **verifier-tampering** (diff writes the test/grader), **score-test-mismatch** (score disagrees with the per-test map) | no | `diff_signals.py` |
+| **2d · Verifier scan** | deterministic, no LLM: scan each candidate's **verifier source** (incl. helper graders it delegates to) for the brittle patterns that reject correct work, **joined with the failing-check data** so only patterns on the check that actually fails count → `brittle` / `escalate-oracle` priors that point the judge | no | `scan_verifiers.py` (source fetched by `fetch_task_files.py`) |
 | **3 · Judge** | one sub-agent per candidate reads the diff (not the giant transcript) → confirm false-neg / false-pos / cheat / runtime bug | yes, candidates only | dispatch sub-agents |
 | **3b · Confirm** | for every Stage-3 **FAIL**, one adversarial sub-agent tries to *refute* it; the FAIL stands only if it survives | yes, FAILs only | dispatch sub-agents |
 | **4 · Aggregate** | fold findings into the shared SSOT + gate | no | `../../shared/aggregate.py` + `../../shared/gate.py` |
@@ -92,6 +93,16 @@ python scripts/triage.py audit_out/detail.jsonl --out-dir audit_out
 #     tampering, score/test mismatch). Cheapest false-positive + harness-bug catches.
 python scripts/diff_signals.py audit_out/detail.jsonl --out-dir audit_out
 
+# 3d. fetch the candidates' verifier source (instruction + tests/*.py/*.sh) the judge
+#     reads, then scan it deterministically for brittle patterns BEFORE spending a
+#     sub-agent. --ids is a {task-name: task_id} map for the candidates (the ids are in
+#     the pulled attempts) — pass it inline or as @file. --fail-data joins on the
+#     FAILING check so only real patterns count; a fail with no visible pattern becomes
+#     `escalate-oracle` (routes to the judge).
+python scripts/fetch_task_files.py --ids '{"<candidate-task>":"<task_id>", ...}' --out audit_out/src
+python scripts/scan_verifiers.py --src audit_out/src --out-dir audit_out \
+    --fail-data audit_out/detail.jsonl
+
 # 4. dispatch one judge sub-agent per candidate (prompt below); each writes
 #    qc_out/traj_<task>.json. Then for every FAIL, dispatch the confirmer
 #    (Stage 3b) before aggregating with the static findings.
@@ -107,6 +118,8 @@ first — it's the strongest signal a verifier is too strict or env-dependent.
 - `triage.md` — ranked candidates: split-score, all-fail, and high-fail tests.
 - `findings_trajectory.json` — candidate findings in the shared schema (WARN; confirmed → FAIL by Stage 3).
 - `findings_diff_signals.json` — per-attempt `noop-pass` / `verifier-tampering` / `score-test-mismatch` candidates (WARN; judge confirms).
+- `src/<task>/…` — the fetched verifier source (`fetch_task_files.py`) the scan and judge read.
+- `findings_scan.json` / `scan.md` — deterministic brittle-verifier priors: `brittle` (a pattern on the failing check) and `escalate-oracle` (fails with no visible pattern → must go to the judge/oracle). WARN candidates that prime Stage 3; never a verdict on their own.
 - `difficulty.md` / `findings_difficulty.json` — empirical avg@N per task; `difficulty-too-easy`
   (FAIL when measured on an approved model — Opus 4.8 / GPT-5.4 — with ≥8 attempts and rate
   > 0.5; WARN otherwise) and `avg-at-8-mismatch` (recorded `avg_at_8` disagrees with the

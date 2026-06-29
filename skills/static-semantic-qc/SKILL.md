@@ -268,6 +268,18 @@ layer so the expensive checks only see still-clean tasks:
 Both emit the same schema, so their findings fold into the same `qc_out/` SSOT and a
 behavioral `FAIL` overrides this layer's `PASS` (sticky-FAIL gate).
 
+**Static → behavioral bridge — `gen_cheat_harness.py`.** A static reward-hack / leakage
+flag is only a *candidate*; the ground truth is a no-work cheat the oracle still scores
+`reward=1`. This script closes that loop: for every exploit-class finding (agent-writable
+grader / baked-or-read truth / literal-only verifier) it auto-writes a candidate `solve.sh`
+(+ a `CHEAT.md` explaining the exploit and how to confirm), ready to drop into the task and
+run through the Layer-3 oracle gate.
+```bash
+python scripts/gen_cheat_harness.py <tasks> --out-dir cheats
+```
+A generated cheat that scores `reward=1` is a **CONFIRMED** reward-hack; one that doesn't
+pass is **inconclusive** (not "safe") — read its `CHEAT.md` and refine by hand.
+
 - **Delivery report** — `python scripts/delivery_report.py <tasks> --ssot qc_out/review-ssot.csv`
   emits the difficulty / category / language distributions + diversity flags clients
   expect at handoff.
