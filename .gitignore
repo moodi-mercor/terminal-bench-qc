@@ -16,3 +16,7 @@ qc_out/
 
 # Layer 2 trajectory-audit local run outputs (pulled batches, judged findings)
 skills/trajectory-audit/audit_out*/
+
+# local batch run artifacts and findings dumps (not skills)
+jobs/
+findings_*.json

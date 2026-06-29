@@ -51,6 +51,10 @@ def pull_summary(key, batch_id, page_size, max_rows):
                 "model": t.get("orchestrator_llm_model"),
                 "status": t.get("trajectory_status"),
                 "score": t.get("final_score"),
+                # free trajectory-shape signals (no detail call needed)
+                "tool_calls": t.get("trajectory_statistics_tool_calls"),
+                "total_tokens": t.get("trajectory_statistics_total_tokens"),
+                "time_elapsed": t.get("trajectory_time_elapsed"),
             }
             seen += 1
             if max_rows and seen >= max_rows:
@@ -70,6 +74,12 @@ def add_detail(key, row):
         row["diff"] = out.get("solution") or ""
         row["tests_passed"] = out.get("tests_passed")
         row["tests_failed"] = out.get("tests_failed")
+        # runtime context — distinguishes a runtime/setup bug from a bad solution,
+        # and gives the judge the failure reason without the full transcript.
+        row["exit_code"] = out.get("exit_code")
+        row["eval_status"] = out.get("eval_status")
+        row["error_message"] = out.get("error_message")
+        row["duration_seconds"] = out.get("duration_seconds")
     return row
 
 
