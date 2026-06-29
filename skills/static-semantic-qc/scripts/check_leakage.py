@@ -605,13 +605,37 @@ def _pycache_leak(root, name):
     # only a GENERATOR/answer-producing source matters — removing a generic helper .py
     # isn't a leak. Gating on a sensitive name keeps this from firing on ~44% of tasks.
     rm_gen = [p for p in rm_py if _SENSITIVE_PY.search(os.path.basename(p))]
-    if _RUNS_PY.search(btxt) and rm_gen and not _PYC_CLEAN.search(btxt):
+    # PRECISION: `python X.py` runs X as __main__ and CPython writes NO .pyc for it — so
+    # `python gen.py && rm gen.py` leaves no residue. A .pyc only persists if a module is
+    # IMPORTED: `python -m <mod>` (caches the module), or the generator imports a LOCAL
+    # sibling (whose .pyc is then cached). Only those genuinely leak bytecode.
+    runs_module = bool(re.search(r"\bpython3?\s+-m\s+\w", btxt))
+
+    def _imports_local(genbase):
+        envdir = os.path.join(root, "environment")
+        for dp, _d, files in os.walk(envdir):
+            if genbase not in files:
+                continue
+            src = read_text(os.path.join(dp, genbase))
+            sibs = {os.path.splitext(f)[0] for f in files if f.endswith(".py") and f != genbase}
+            for m in re.finditer(r"^\s*(?:from\s+(\.\w*)\s+import|from\s+(\w+)\s+import|import\s+(\w+))",
+                                 src, re.M):
+                if m.group(1):              # relative import -> caches a sibling
+                    return True
+                mod = m.group(2) or m.group(3)
+                if mod in sibs:             # imports a local sibling module
+                    return True
+        return False
+
+    residue_real = runs_module or any(_imports_local(os.path.basename(p)) for p in rm_gen)
+    if _RUNS_PY.search(btxt) and rm_gen and not _PYC_CLEAN.search(btxt) and residue_real:
+        how = "as a module (`python -m`)" if runs_module else "and imports a local sibling module"
         out.append(finding(name, "anti_cheat", WARN, "pycache-residue-after-script-removal",
-                           detail=f"the build runs a python generator and then removes its source "
-                                  f"({sorted(set(rm_gen))[:4]}) but never cleans __pycache__/*.pyc "
-                                  "and does not set PYTHONDONTWRITEBYTECODE — the compiled bytecode "
-                                  "of the (hidden) generator survives in the image, agent-readable "
-                                  "and decompilable. CANDIDATE — confirm by building + `find /app -name '*.pyc'`.",
+                           detail=f"the build runs a python generator {how} and then removes its source "
+                                  f"({sorted(set(rm_gen))[:4]}) but never cleans __pycache__/*.pyc and does "
+                                  "not set PYTHONDONTWRITEBYTECODE — the compiled bytecode is cached and "
+                                  "survives in the image, agent-readable and decompilable. CANDIDATE — "
+                                  "confirm by building + `find /app -name '*.pyc'`.",
                            location="environment/Dockerfile",
                            fix="After running the generator, delete its __pycache__ (`rm -rf **/__pycache__`, "
                                "`find / -name '*.pyc' -delete`) or build with PYTHONDONTWRITEBYTECODE=1."))
