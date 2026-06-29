@@ -225,7 +225,8 @@ STRENGTHEN = {"literal-only-verifier", "source-match-verification", "verifier-un
               "existence-only-check", "no-assertion-test", "vacuous-test", "swallowed-assertion",
               "weak-assertion", "unconditional-reward", "test-sh-swallows-failure",
               "test-sh-set-e-reward-abort", "empty-parametrize", "skipped-scored-test",
-              "agent-writable-reward-signal", "tests-bake-unread", "truth-named-baked"}
+              "agent-writable-reward-signal", "tests-bake-unread", "truth-named-baked",
+              "conftest-plant-vulnerable"}
 ALIGN = {"brittle-string-match", "untested-requirement"}
 # DEFINITE brittle/weak-verifier defects (not advisory) — these alone justify FIXABLE.
 # Everything else at P1 (verifier-reads-config-spec, truth-named-baked, tests-bake-unread,
@@ -237,7 +238,7 @@ CONCRETE_BRITTLE = {"literal-only-verifier", "source-match-verification",
                     "vacuous-test", "no-assertion-test", "existence-only-check",
                     "swallowed-assertion", "empty-parametrize", "skipped-scored-test",
                     "unconditional-reward", "test-sh-swallows-failure",
-                    "test-sh-set-e-reward-abort"}
+                    "test-sh-set-e-reward-abort", "conftest-plant-vulnerable"}
 # semantic/behavioral signals that the task itself is broken (TOTAL, not fixable by edit)
 ORACLE_FAIL = {"golden-patch-mismatch", "oracle-fails", "reference-fails-own-tests"}
 

@@ -43,6 +43,15 @@ Detectors/labelers committed on `main` (`a208e0b`…`27d3d0e`). Tools: `studio_l
      golden runs stored); must generate via Batch 1.
 
 ## Phase 2 — Remediate (where the QC pays off)
+0. **conftest-plant reward-hack (HIGHEST LEVERAGE).** A root agent plants `/app/conftest.py`
+   (skip-all `pytest_collection_modifyitems`) → pytest exits 0 → reward=1, defeating the verifier.
+   Mechanism proven; **735/967 = ~76% of pytest tasks vulnerable**; 0 ship a legit conftest.
+   **Fix = one line:** run the verifier as `pytest --noconftest …` (validated: defeats the cheat,
+   breaks nothing). Detector `conftest-plant-vulnerable` (check_reward_hack) + AutoQC static ss_04
+   now flag it and CLEAR once --noconftest is added. **Apply it as a harness/test.sh-TEMPLATE change
+   owned by the task pipeline** (one change immunizes the whole corpus) — NOT a mass snapshot mutation
+   (the /snapshots update API is write-on-every-call + multipart; too risky to bulk-run).
+
 3. **Pycache systemic fix (~6,652 — biggest win):** bulk-add `ENV PYTHONDONTWRITEBYTECODE=1`
    (or a post-build `find / -name '*.pyc' -delete`) to affected task images. Scriptable as a
    batch over the `qc_remediation`-flagged tasks.

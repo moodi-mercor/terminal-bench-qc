@@ -466,9 +466,44 @@ def _verifier_helper_baked(name, root, p, agent_writable_fired):
                     fix="Move the grader/helper into tests/; keep verifier logic out of the agent image.")]
 
 
+_USER_DROP = re.compile(r"^\s*USER\s+(?!root\b)\S", re.M | re.I)
+
+
+def _conftest_plant_vulnerable(name, root, p):
+    """The verifier runs pytest such that the agent's /app/conftest.py is auto-discovered,
+    the reward is gated on pytest's exit code, the agent is root, and there is no
+    `--noconftest` guard. A root agent plants /app/conftest.py with a skip-all
+    `pytest_collection_modifyitems` hook -> all tests skipped -> pytest exits 0 -> reward 1,
+    defeating the verifier without doing the work. Near-universal on the OTS corpus; the fix
+    is a one-line `pytest --noconftest` (safe: these tasks ship no legit conftest)."""
+    ts = read_text(p["test.sh"])
+    if "pytest" not in ts:
+        return []
+    discovers = (re.search(r"pytest\b[^\n]*\s/app/\S", ts)
+                 or re.search(r"cd\s+/app\b[^\n]*\n[^\n]*pytest", ts, re.S)
+                 or re.search(r"cp\s+[^\n]*\s/app/\S*test_outputs\.py", ts))
+    rc_gated = re.search(r"reward", ts, re.I) and re.search(
+        r"\$\?|rc=|test_status|-eq\s*0|returncode|exit_code", ts)
+    guarded = re.search(r"--noconftest|--confcutdir", ts)
+    root_agent = not _USER_DROP.search(read_text(p["Dockerfile"]))
+    if discovers and rc_gated and not guarded and root_agent:
+        return [finding(name, "anti_cheat", WARN, "conftest-plant-vulnerable",
+                        detail="verifier runs pytest with /app on the conftest-discovery path, "
+                               "gates the reward on pytest's exit code, and the agent is root with "
+                               "no --noconftest guard — a planted /app/conftest.py (skip-all "
+                               "collection hook) makes pytest exit 0 and forces reward=1 without "
+                               "doing the work. Mechanism confirmed; ~76% of OTS pytest tasks.",
+                        location="tests/test.sh",
+                        fix="Run the verifier as `pytest --noconftest ...` (safe — these tasks ship "
+                            "no legit conftest), or run pytest from a non-agent-writable dir / set "
+                            "--confcutdir, so a planted /app/conftest.py is not discovered.")]
+    return []
+
+
 def check_task(name, root):
     out = []
     p = task_paths(root)
+    out += _conftest_plant_vulnerable(name, root, p)
     reflection = is_reflection_schema(load_toml(p["task.toml"])) if os.path.isfile(p["task.toml"]) else False
     if os.path.isfile(p["test.sh"]):
         out += _analyze_test_sh(p["test.sh"], name, reflection)
