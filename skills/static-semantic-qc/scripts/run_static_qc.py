@@ -2,10 +2,10 @@
 """Run every deterministic (static) QC gate over a tasks tree and aggregate.
 
 This is the one-command entry point for the static half of Layer 1. It runs all
-ten static gates (structure, metadata, leakage, reward-hack, env-fairness,
-portability, dockerfile, instructions, verifier-defenses, security), writes their
-findings JSON into an output directory, then produces the SSOT + defect-distribution
-reports.
+eleven static gates (structure, metadata, leakage, reward-hack, env-fairness,
+portability, dockerfile, instructions, verifier-defenses, security, test-hygiene),
+writes their findings JSON into an output directory, then produces the SSOT +
+defect-distribution reports.
 
 The semantic half of Layer 1 (reviewer + adversary) is run separately by
 dispatching sub-agents — see QC_GUIDE.md and this skill's SKILL.md. Trajectory
@@ -33,6 +33,7 @@ import check_dockerfile
 import check_instructions
 import check_verifier_defenses
 import check_security
+import check_test_hygiene
 import aggregate
 from common import discover_tasks, emit
 
@@ -61,6 +62,7 @@ def main():
         ("instructions", check_instructions, "findings_instructions.json"),
         ("verifier_defenses", check_verifier_defenses, "findings_verifier_defenses.json"),
         ("security", check_security, "findings_security.json"),
+        ("test_hygiene", check_test_hygiene, "findings_test_hygiene.json"),
     ]
     for label, mod, fname in gates:
         findings = []

@@ -4,10 +4,10 @@ description: >-
   Quality-control Terminal-Bench OTS tasks before delivery and flag defects
   across a dataset. Use when asked to QC, review, audit, or find defects in
   Terminal-Bench / TB2 tasks, check for leakage or brittle verifiers, or measure
-  defect rate and distribution across a task set. Runs ten deterministic static
+  defect rate and distribution across a task set. Runs eleven deterministic static
   gates first (structure+hygiene, metadata, Dockerfile reproducibility+structuring,
   instructions, leakage, reward-hack, env-fairness, portability, verifier-defense,
-  security), then a per-task semantic review plus an adversarial reward-hack pass,
+  security, test-hygiene), then a per-task semantic review plus an adversarial reward-hack pass,
   plus dataset-level decontamination and diversity-distribution checks, and
   aggregates into an SSOT + defect-distribution report. Metadata is schema-tolerant
   (TB2/OTS and Reflection's Harbor schema, incl. the avg@8 ≤ 0.5 difficulty bar,
@@ -67,12 +67,12 @@ schema (`../../shared/common.py`) and aggregate into one SSOT via `../../shared/
 
 | Part | What it checks | How | Entry point |
 |---|---|---|---|
-| **1 · Static** | required files+hygiene, metadata, Dockerfile reproducibility+structuring, instruction heuristics, leakage/anti-cheat, reward-hack, env-fairness, portability, verifier-defense, security — **10 deterministic gates** (below) | python scripts | `run_static_qc.py` |
+| **1 · Static** | required files+hygiene, metadata, Dockerfile reproducibility+structuring, instruction heuristics, leakage/anti-cheat, reward-hack, env-fairness, portability, verifier-defense, security, **test-hygiene** (native-Python tests) — **11 deterministic gates** (below) | python scripts | `run_static_qc.py` |
 | **2 · Semantic review** | instruction↔test alignment, brittle/phantom/weak tests, over-spec, golden-patch, realism | reviewer sub-agent, one per task | dispatch agents |
 | **3 · Adversarial** | reward-hack red-team — can the verifier be gamed without doing the work? | adversary sub-agent, one per task | dispatch agents |
 | **4 · Dataset** | decontamination vs public benchmarks, near-duplicates, diversity, difficulty | python scripts | `decontaminate.py` |
 
-### Part 1 — the ten static gates (`run_static_qc.py`)
+### Part 1 — the eleven static gates (`run_static_qc.py`)
 
 Cheapest first; each emits the shared findings schema and is precision-tuned
 against the eval set.
@@ -89,6 +89,7 @@ against the eval set.
 | `check_portability` | solve/test robustness: backgrounded-daemon-no-redirect, PEP-668 pip, server-not-started, broad `pkill`, systemd/entrypoint assumptions; **solve.sh decomposition** (large embedded heredoc / over-long script — Reflection-gated); **verifier-unbounded-call** (network/service call in the verifier with no timeout — can hang past the budget) |
 | `check_verifier_defenses` | verifier with no anti-cheat defense (mutated-rerun / recompute / source-grep / re-exec). A PASS `verifier-defended` deterministically suppresses adversary cheat-vectors against it; `verifier-undefended` (WARN) flags a literal-only verifier as gameable; **a degenerate in-image integrity guard (`sha256sum -c`/`cmp` vs a baked ref, agent root) no longer counts as a defense**; **source-match-verification** (verifier matches the agent's *source* for keywords/regex with no functional check — verifies text not behaviour) |
 | `check_security` | agent-visible **prompt-injection** ("ignore the task / reveal the answer / skip the tests"), **hidden/bidi Unicode**, **obfuscated payloads** (base64\|sh, eval/exec of decoded data) — all WARN |
+| `check_test_hygiene` | **test-structuring** (client feedback, all WARN): `test_outputs.py` shelling out to run Python (`python3 -c`/heredoc) or **base64-encoded commands** for work doable natively; **bash builtins with a native equivalent** (cat/test/diff/cmp/sha256sum/grep/wc → open/os/hashlib/re); **fragmented test helpers** — logic split across extra `tests/*.py` files instead of folded into `test_outputs.py` (`tests/.truth/` exempt). Legit subprocess to the agent's deliverable / PTY / a marked fresh-interpreter import is not flagged |
 
 ## How to run
 
