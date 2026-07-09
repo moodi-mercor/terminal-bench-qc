@@ -65,7 +65,12 @@ RUNNER = re.compile(r"\b(_run|_exec_check|_exec|subprocess\.(run|check_output|Po
 
 
 def _subprocess_string_literals(src):
-    """Every string literal passed to a subprocess runner helper (best-effort AST)."""
+    """(value, lineno) for every string literal passed to a subprocess runner helper.
+
+    AST-based on purpose: a line-scan false-positives on comments/docstrings that
+    merely *mention* `python3 -c` (refactored files keep explanatory comments about
+    what the original shell command did). Only actual command strings count.
+    """
     lits = []
     try:
         tree = ast.parse(src)
@@ -82,7 +87,9 @@ def _subprocess_string_literals(src):
             for a in node.args:
                 for s in ast.walk(a):
                     if isinstance(s, ast.Constant) and isinstance(s.value, str):
-                        lits.append(s.value)
+                        # span the whole call so a trailing justification comment
+                        # on any of its lines is seen
+                        lits.append((s.value, (node.lineno, node.end_lineno or node.lineno)))
     return lits
 
 
@@ -134,13 +141,19 @@ def check_task(name, root):
                 "(or a plain subprocess call to the agent's deliverable if that's what it runs)."))
 
     runner_lits = _subprocess_string_literals(src)
-    haystacks = runner_lits + b64_cmds
-    # 1a. python-in-subprocess — line-aware so explicitly-justified shell-outs
-    # (a sanctioned fresh-interpreter import, or a comment marking it a deliverable /
-    # process-level call) are not counted; those are the documented escape hatch.
-    py_lines = [ln for ln in src.splitlines()
-                if (PY_C.search(ln) or PY_HEREDOC.search(ln)) and not JUSTIFIED.search(ln)]
-    if py_lines or any(PY_C.search(s) for s in b64_cmds):
+    src_lines = src.splitlines()
+    haystacks = [v for v, _ in runner_lits] + b64_cmds
+    # 1a. python-in-subprocess — only actual subprocess command STRINGS count
+    # (comments/docstrings mentioning `python3 -c` are ignored), and a string whose
+    # source line carries an explicit justification marker (sanctioned fresh-
+    # interpreter import / deliverable / PTY) is the documented escape hatch.
+    def _justified(span):
+        a, b = span
+        return any(JUSTIFIED.search(src_lines[i - 1])
+                   for i in range(a, min(b, len(src_lines)) + 1))
+    py_hits = [(v, sp) for v, sp in runner_lits
+               if (PY_C.search(v) or PY_HEREDOC.search(v)) and not _justified(sp)]
+    if py_hits or any(PY_C.search(s) for s in b64_cmds):
         findings.append(finding(
             name, "tests", WARN, "shell-wrapped-python",
             detail="test_outputs.py shells out to run Python (`python3 -c` / heredoc) "
