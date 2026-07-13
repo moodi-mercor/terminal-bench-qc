@@ -41,6 +41,84 @@ def worst(severities):
     return out
 
 
+# ------------------------------------------------------------- dimensions ---
+# The QC dimensions every task must be assessed on before it can be called clean.
+# This is the master checklist (see QC_CHECKLIST.md): each dimension names the tool
+# that answers it, the QC layer, and the SSOT `area` its finding rolls into. A task
+# is INCOMPLETE — not clean — until every dimension carries a finding *with evidence*.
+# Enforced by aggregate.py --require-complete (which quarantines incomplete tasks via
+# the gate); the reviewer/adversary producers (judge.py) also tag each finding with
+# its `dimension` so the aggregator can tell "assessed clean" from "never looked".
+#
+#   key -> {area, layer, tool}
+QC_DIMENSIONS = {
+    # semantic reviewer — judge.py --role reviewer (one finding per dimension)
+    "alignment":     {"area": "instructions", "layer": "semantic",   "tool": "judge.py --role reviewer"},
+    "coverage":      {"area": "tests",         "layer": "semantic",   "tool": "judge.py --role reviewer"},
+    "hygiene":       {"area": "instructions",  "layer": "semantic",   "tool": "judge.py --role reviewer"},
+    "golden-patch":  {"area": "solution",      "layer": "semantic",   "tool": "judge.py --role reviewer"},
+    "realism":       {"area": "instructions",  "layer": "semantic",   "tool": "judge.py --role reviewer"},
+    "constraints":   {"area": "tests",         "layer": "semantic",   "tool": "judge.py --role reviewer"},
+    # adversarial reward-hack red-team — judge.py --role adversary
+    "cheat-vector":  {"area": "tests",         "layer": "semantic",   "tool": "judge.py --role adversary"},
+    # behavioral — the two a read cannot decide; only Modal/Docker execution answers them
+    "oracle-passes": {"area": "behavioral",    "layer": "behavioral", "tool": "modal_gate.py (oracle -> reward 1)"},
+    "noop-fails":    {"area": "behavioral",    "layer": "behavioral", "tool": "modal_gate.py (no-op -> reward 0)"},
+}
+# The six read-only dimensions the reviewer sub-agent / judge.py reviewer must emit.
+REVIEWER_DIMS = ["alignment", "coverage", "hygiene", "golden-patch", "realism", "constraints"]
+
+
+def dimension_area(dim):
+    """SSOT area a dimension's coverage finding rolls into (default 'tests')."""
+    return QC_DIMENSIONS.get(dim, {}).get("area", "tests")
+
+
+def coverage_gaps(task_findings, behavioral=None, require_adversary=True,
+                  require_behavioral=True):
+    """Which QC dimensions were skipped or asserted without evidence for one task.
+
+    A dimension is *covered* when some finding carries `dimension == <key>` and that
+    finding has non-empty evidence (`detail` or `location`) — a PASS with no evidence
+    means "didn't actually look", so it does NOT count as covered. The two behavioral
+    dimensions are covered by a runtime signal (oracle/noop in `behavioral`), not by a
+    read. Returns [(dim, reason)] for every gap; empty list == fully assessed.
+
+    `behavioral` is the per-task runtime dict {oracle,noop,...} (see aggregate.py);
+    None means behavioral never ran. Set require_* False to exempt a layer you did
+    not intend to run (e.g. reviewer-only pass exempts adversary + behavioral).
+    """
+    def has_evidence(f):
+        return bool((f.get("detail") or "").strip() or (f.get("location") or "").strip())
+
+    covered, no_evidence = set(), set()
+    for f in task_findings:
+        dim = f.get("dimension")
+        if not dim:
+            continue
+        if has_evidence(f):
+            covered.add(dim)
+        else:
+            no_evidence.add(dim)
+
+    gaps = []
+    need = list(REVIEWER_DIMS)
+    if require_adversary:
+        need.append("cheat-vector")
+    for dim in need:
+        if dim in covered:
+            continue
+        gaps.append((dim, "asserted-without-evidence" if dim in no_evidence
+                     else "not-assessed"))
+    if require_behavioral:
+        b = behavioral or {}
+        if b.get("oracle") is None:
+            gaps.append(("oracle-passes", "not-assessed"))
+        if b.get("noop") is None:
+            gaps.append(("noop-fails", "not-assessed"))
+    return gaps
+
+
 def finding(task, area, severity, title, detail="", location="", fix="", layer=""):
     f = {
         "task": task, "area": area, "severity": severity, "title": title,

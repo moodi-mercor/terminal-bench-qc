@@ -45,6 +45,29 @@ PRICE = {  # $ per 1M tokens (input, output) — for the cost estimate only
 MAX_FILE_CHARS = 16000   # cap any single file inlined into the prompt
 HERE = os.path.dirname(os.path.abspath(__file__))
 
+# The six dimensions the reviewer MUST cover, and the SSOT area each rolls into.
+# Kept in sync with shared/common.py QC_DIMENSIONS (the aggregator's copy). A missing
+# dimension — or one asserted with no evidence — is injected below as a FAIL so the
+# skip surfaces in the SSOT instead of passing silently.
+REVIEWER_DIMS = ["alignment", "coverage", "hygiene", "golden-patch", "realism", "constraints"]
+DIM_AREA = {"alignment": "instructions", "coverage": "tests", "hygiene": "instructions",
+            "golden-patch": "solution", "realism": "instructions", "constraints": "tests"}
+
+
+def coverage_gaps(findings):
+    """[(dim, reason)] for reviewer dimensions skipped or asserted without evidence."""
+    covered, no_evidence = set(), set()
+    for f in findings:
+        dim = f.get("dimension")
+        if dim not in REVIEWER_DIMS:
+            continue
+        if (f.get("detail") or "").strip() or (f.get("location") or "").strip():
+            covered.add(dim)
+        else:
+            no_evidence.add(dim)
+    return [(d, "asserted-without-evidence" if d in no_evidence else "not-assessed")
+            for d in REVIEWER_DIMS if d not in covered]
+
 
 # ----------------------------------------------------------------- auth -----
 def load_key():
@@ -110,12 +133,17 @@ def task_context(name, root, static_findings=None):
 REVIEWER_OUT = (
     "\nYou are given every file inline above — you cannot browse, so do not ask to. "
     "Apply the rubric. Output ONLY a JSON array (no prose, no markdown fence) of finding "
-    'objects: {"task","area":"instructions|tests|solution","severity":"PASS|WARN|FAIL",'
+    'objects: {"task","dimension":"alignment|coverage|hygiene|golden-patch|realism|constraints",'
+    '"area":"instructions|tests|solution","severity":"PASS|WARN|FAIL",'
     '"title":"<stable defect title, e.g. brittle-string-match / untested-requirement / '
     'weak-assertion / golden-patch-mismatch / task-realism>","location":"<file:line or \'\'>",'
-    '"detail":"<file:line evidence>","fix":"<one line>","layer":"semantic"}. Emit one finding '
-    "per dimension you assessed (a PASS finding per clean dimension is expected). For any item "
-    "under STATIC FINDINGS you judge a false positive, also emit "
+    '"detail":"<file:line evidence>","fix":"<one line>","layer":"semantic"}. COVERAGE CONTRACT: '
+    "emit EXACTLY ONE finding for EACH of the six dimensions (alignment, coverage, hygiene, "
+    "golden-patch, realism, constraints) — a PASS finding per clean dimension is REQUIRED, not "
+    "optional; a missing dimension fails the task's QC as incomplete. EVERY finding — including "
+    "PASS — MUST have a non-empty `detail` citing the file:line you actually inspected (an empty "
+    "PASS is rejected like a skip). You may add extra findings beyond the six, never fewer. For "
+    "any item under STATIC FINDINGS you judge a false positive, also emit "
     '{"task","area":<same>,"severity":"PASS","title":"verify-refuted","ref":"<static title>",'
     '"detail":"why it is a false positive","layer":"semantic"}; if you confirm it, use '
     'title "verify-confirm". Presume the task is correct; only FAIL on concrete, cited evidence.'
@@ -250,11 +278,29 @@ def main():
         resp = call_api(key, args.model, prompts[role], ctx + out_instr[role],
                         args.effort, max_tokens=args.max_tokens)
         findings = extract_findings(resp, name)
+        if role == "reviewer":
+            # Enforce the coverage contract: a dimension the model left out (or asserted
+            # with no evidence) becomes a visible FAIL rather than a silent pass — this is
+            # what stops the judge from skipping a dimension.
+            for dim, reason in coverage_gaps(findings):
+                findings.append({
+                    "task": name, "dimension": dim, "area": DIM_AREA[dim], "severity": "FAIL",
+                    "title": "dimension-not-assessed", "location": "",
+                    "detail": f"reviewer produced no evidence-backed finding for dimension "
+                              f"'{dim}' ({reason}); QC is incomplete until it is assessed.",
+                    "fix": f"re-run the reviewer and cite file:line evidence for '{dim}'.",
+                    "layer": "semantic"})
         prefix = "sem" if role == "reviewer" else "adv"
         emit(findings, os.path.join(args.out_dir, f"{prefix}_{name}.json"))
         return role, name, findings, usage_of(resp)
 
     jobs = [(role, n, r) for role in roles for n, r in tasks]
+    if os.environ.get("JUDGE_RESUME"):
+        def _out(role, n):
+            return os.path.join(args.out_dir, f"{'sem' if role == 'reviewer' else 'adv'}_{n}.json")
+        before = len(jobs)
+        jobs = [(role, n, r) for role, n, r in jobs if not os.path.exists(_out(role, n))]
+        print(f"[resume] skipping {before - len(jobs)} already-done; {len(jobs)} left")
     done = 0
     with cf.ThreadPoolExecutor(max_workers=args.workers) as ex:
         futs = [ex.submit(run_one, role, n, r) for role, n, r in jobs]

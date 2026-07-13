@@ -21,7 +21,8 @@ import json
 import os
 from collections import Counter, defaultdict
 
-from common import PASS, WARN, FAIL, AREAS, worst, layer_of
+from common import (PASS, WARN, FAIL, AREAS, worst, layer_of,
+                    REVIEWER_DIMS, coverage_gaps, dimension_area)
 
 # columns shown in the CSV, one per finding area, grouped by QC layer:
 #   Layer 1 static (deterministic): structure, metadata, dockerfile, anti_cheat, dataset
@@ -125,6 +126,41 @@ def per_task(findings):
     for f in findings:
         tasks[f["task"]][f["area"]].append(f)
     return tasks
+
+
+def inject_coverage(findings, behavioral_map, require_adversary=True,
+                    require_behavioral=True):
+    """Append a FAIL for every QC dimension a task never assessed (the completeness gate).
+
+    A task is INCOMPLETE — not clean — until every dimension carries an evidence-backed
+    finding: the six reviewer dimensions, the adversary cheat-vector, and the two
+    behavioral dimensions (oracle passes / no-op fails, from `behavioral_map`). This is
+    what makes the LLM judge unable to skip a dimension by staying silent, and what
+    forces a Modal oracle/no-op result before a task can pass. Returns (findings, n_gaps);
+    the injected findings roll through verdicts + the gate like any other FAIL.
+    """
+    by_task = defaultdict(list)
+    for f in findings:
+        by_task[f["task"]].append(f)
+    tasks = set(by_task) | set(behavioral_map or {})
+    injected, n = list(findings), 0
+    for task in sorted(tasks):
+        gaps = coverage_gaps(by_task.get(task, []), (behavioral_map or {}).get(task),
+                             require_adversary=require_adversary,
+                             require_behavioral=require_behavioral)
+        for dim, reason in gaps:
+            injected.append({
+                "task": task, "dimension": dim, "area": dimension_area(dim),
+                "severity": FAIL, "title": "qc-incomplete", "location": "",
+                "detail": f"dimension '{dim}' was not assessed with evidence ({reason}); "
+                          f"QC is incomplete — the task cannot be declared clean until it is.",
+                "fix": {"oracle-passes": "run the Modal oracle gate (modal_gate.py).",
+                        "noop-fails": "run the Modal no-op gate (modal_gate.py).",
+                        "cheat-vector": "run judge.py --role adversary."}.get(
+                            dim, f"run judge.py --role reviewer and cite evidence for '{dim}'."),
+                "layer": "behavioral" if dim in ("oracle-passes", "noop-fails") else "semantic"})
+            n += 1
+    return injected, n
 
 
 def verdicts(tasks):
@@ -453,6 +489,18 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("findings_dir")
     ap.add_argument("--out-dir", default=None)
+    ap.add_argument("--require-complete", action="store_true",
+                    help="fail a task as INCOMPLETE (qc-incomplete FAIL) unless every QC "
+                         "dimension was assessed with evidence — the six reviewer dims, the "
+                         "adversary cheat-vector, and the two behavioral dims (oracle/no-op). "
+                         "Use for stringent per-delivery QC; off by default so the OTS "
+                         "precision/recall harness is unaffected.")
+    ap.add_argument("--no-require-adversary", action="store_true",
+                    help="with --require-complete, exempt the adversary cheat-vector dimension "
+                         "(reviewer-only pass).")
+    ap.add_argument("--no-require-behavioral", action="store_true",
+                    help="with --require-complete, exempt the two behavioral dimensions "
+                         "(when a Modal oracle/no-op run is not part of this pass).")
     args = ap.parse_args()
     out_dir = args.out_dir or args.findings_dir
     os.makedirs(out_dir, exist_ok=True)
@@ -461,6 +509,27 @@ def main():
     findings, n_refuted = reconcile(findings)
     if n_refuted:
         print(f"  reconcile: dropped {n_refuted} static finding(s) refuted by review sub-agents")
+
+    # Behavioral runtime signals (oracle/noop/cheat/builds), if a Modal/Docker gate wrote
+    # them. Loaded here (not just for buckets) so --require-complete can check the two
+    # behavioral dimensions against them.
+    bmap = {}
+    bsig = os.path.join(args.findings_dir, "behavioral_signals.json")
+    if os.path.isfile(bsig):
+        try:
+            bmap = json.load(open(bsig))
+        except (OSError, ValueError):
+            bmap = {}
+
+    if args.require_complete:
+        findings, n_gaps = inject_coverage(
+            findings, bmap,
+            require_adversary=not args.no_require_adversary,
+            require_behavioral=not args.no_require_behavioral)
+        if n_gaps:
+            print(f"  require-complete: flagged {n_gaps} un-assessed dimension(s) as "
+                  f"qc-incomplete (task stays quarantined until assessed)")
+
     tasks = per_task(findings)
     rows = verdicts(tasks)
 
@@ -470,14 +539,8 @@ def main():
     n_defects = write_defects_csv(findings, os.path.join(out_dir, "defects.csv"))
 
     # Triage buckets + Studio qc:* tags. If a behavioral_signals.json is present
-    # ({task: {oracle,noop,cheat,builds}}), the TOTAL buckets are confirmed from it.
-    bmap = {}
-    bsig = os.path.join(args.findings_dir, "behavioral_signals.json")
-    if os.path.isfile(bsig):
-        try:
-            bmap = json.load(open(bsig))
-        except (OSError, ValueError):
-            bmap = {}
+    # ({task: {oracle,noop,cheat,builds}}), the TOTAL buckets are confirmed from it
+    # (loaded above, also feeds --require-complete's behavioral-dimension check).
     hist = write_buckets_csv(tasks, os.path.join(out_dir, "tasks_buckets.csv"), bmap)
 
     n_fail = sum(1 for r in rows.values() if r["overall"] == FAIL)

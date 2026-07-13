@@ -19,7 +19,7 @@ Work in three phases.
 
 ---
 
-## Dimension 1 — Instruction ↔ verifier alignment
+## Dimension 1 — Instruction ↔ verifier alignment  `dimension: alignment`
 
 Every hard requirement in the instruction has ≥1 test, AND every test maps to a requirement stated in the prompt OR discoverable in the agent-visible environment.
 
@@ -29,27 +29,27 @@ Every hard requirement in the instruction has ≥1 test, AND every test maps to 
 - **weak-assertion** (FAIL when it lets a wrong solution pass an essential requirement; otherwise note it) — too permissive (asserts a substring but ignores exit code; checks a value's *format* not its value; `os.path.exists(out)` when the file's *contents* are the deliverable).
 - **structured-output-undocumented** (FAIL when the verifier pins a structure the agent can't discover; else WARN) — the task must produce a structured output (JSON/CSV/YAML/config file/DB rows/API response) and the verifier asserts its shape, but the exact schema (fields/columns/types/format) is documented NEITHER in the instruction NOR in a clearly-referenced spec/sample staged in `environment/`. Do NOT flag if the schema is shown (example block, field/column/key list, a named key like `"result"`) or is derivable from a sample/input the instruction tells the agent to study. A purely verifier-intrinsic schema that is also discoverable in the env is fine.
 
-## Dimension 2 — Comprehensive coverage
+## Dimension 2 — Comprehensive coverage  `dimension: coverage`
 
 Tests verify every part of the instruction on *both* routes: the correctness route (right answer?) and the optimal-solution route (the required algorithm / perf bound / API?). Flag a stated O(n log n), latency, or memory bound that no test exercises.
 
 - **flaky-test** (FAIL if it can fail a correct solution; else note) — pass/fail varies for the *same correct solution*: wall-clock margins ("<0.5s"), network, unseeded RNG, set/dict ordering, races.
 - Over-constraining an incidental helper name / intermediate value / log string → report as **brittle-string-match**.
 
-## Dimension 3 — Hygiene & clarity
+## Dimension 3 — Hygiene & clarity  `dimension: hygiene`
 
 - **spelling-grammar** (note, non-blocking) — typos/grammar/markdown/LaTeX in `instruction.md`.
 - **instruction-clarity** (escalate toward FAIL) — two plausible readings, both reasonable, and the tests only accept one.
 - **over-specified-instruction** — the prompt dictates the *method* instead of *what success looks like*, against Reflection's "simple, exploration-encouraging" bar. Triggers: dictated function/method signatures, step-by-step algorithm recipes ("1. read X, 2. compute SHA256, 3. hex-encode…"), exact byte/hex layout of an artifact the agent must PRODUCE, enumerated fix lists, exact bug locations, answer-key tables, dictated internal file/module names. **Litmus:** could you write a meaningfully different correct solution? If the method is pinned so there's only one way, it's over-specified. **Intrinsic gate — do NOT flag when:** the detail is verifier-intrinsic (a signature the test links/imports, an output schema/path/value the verifier reads/asserts) OR it merely describes what already EXISTS in the environment (an input file format, staged data). Documenting the INPUT the agent parses is fine; dictating the OUTPUT code it must write is not. Default WARN; escalate toward FAIL only when the prescription removes essentially all problem-solving. (A static `prescriptive-instruction` candidate may be present in the findings — confirm or refute it against this litmus.)
 
-## Dimension 4 — Golden-patch correctness
+## Dimension 4 — Golden-patch correctness  `dimension: golden-patch`
 
 **Required reasoning order: first name the underlying algorithm/method the task calls for, then compare `solution/solve.sh` against a canonical solution for that method, then trace it through each `test_check_*`.** It must implement real logic (no hardcoded outputs, no reading `tests/`, no lookahead) and score 100% on the happy path.
 
 - **golden-patch-mismatch** (FAIL) — the reference wouldn't actually score 100% (misses a requirement, wrong output shape, relies on something absent at run time, or a `str.replace`/patch that silently no-ops because the pattern doesn't match).
 - **hardcoded-solution** (FAIL) — `solve.sh` emits the expected answer literally / reads it from `tests/` rather than computing it.
 
-## Dimension 5 — Task realism (`task-realism`)
+## Dimension 5 — Task realism (`task-realism`)  `dimension: realism`
 
 Does the instruction describe a workflow a real engineer would plausibly be assigned (fix a failing test, implement an endpoint, debug a perf regression, parse logs, migrate a config, repair a build)? Judge the plausibility of the *workflow*, not its size.
 
@@ -58,7 +58,7 @@ Does the instruction describe a workflow a real engineer would plausibly be assi
 - **FAIL** — no real-world analog (an invented puzzle/cipher with no motivation, unless the category is explicitly puzzles), a workflow no dev would do ("hand-edit this binary at offset 0x1F"), or an internally implausible scenario.
 - **Do not hallucinate unrealism** — don't penalize a task for being small, synthetic-by-necessity, or lacking a narrative. Reserve FAIL for genuinely contrived, not merely concise.
 
-## Dimension 6 — Agentic, distractor-free, valid constraints
+## Dimension 6 — Agentic, distractor-free, valid constraints  `dimension: constraints`
 
 The softer judgment calls from Reflection's Quality criteria. These are **note/NEUTRAL-level by default** — do NOT escalate to FAIL unless the violation is clear-cut and material (over-calling here costs precision).
 
@@ -89,6 +89,6 @@ The softer judgment calls from Reflection's Quality criteria. These are **note/N
 
 ---
 
-For each dimension emit a verdict (PASS / FAIL / NEUTRAL), the stable defect title where it applies, the file:line evidence, and a one-line fix. Never force a dimension to NEUTRAL/PASS to be safe — make the criterion precise instead. Do not invent dimensions beyond these six.
+**Coverage contract — you MUST emit exactly one finding for every one of the six dimensions, tagged with its `dimension` key** (`alignment`, `coverage`, `hygiene`, `golden-patch`, `realism`, `constraints`). This is the checklist: a missing dimension is treated as "not assessed" and fails the task's QC as INCOMPLETE — you cannot skip one by staying silent. Every finding — including a `PASS` — MUST carry non-empty `detail` citing the concrete `file:line` evidence you actually looked at (a `PASS` with no evidence reads as "didn't check" and is rejected the same as a skip). Answer the three MANDATORY checks (Q1/Q2/Q3) inside the relevant dimension's `detail`. You may emit *additional* findings (e.g. a second defect in one dimension, or static-flag `verify-refuted`/`verify-confirm`) beyond the six, but never fewer. Never force a dimension to NEUTRAL/PASS to be safe — make the criterion precise instead. Do not invent dimensions beyond these six.
 
 <!-- If Layer-1 static findings are later fed in via a Pipeline Run subject, reattach job (B): for each static FAIL/WARN, try to refute it and emit verify-refuted / verify-confirm. Omitted here because static stays offline. -->

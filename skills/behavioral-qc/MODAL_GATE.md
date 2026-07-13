@@ -84,3 +84,36 @@ $V skills/behavioral-qc/scripts/modal_capture.py TASKS_DIR fails.txt \
   not-passing. For per-check granularity, read the captured log.
 - **Cost.** Sandboxes are `cpu=2, memory=4096`, terminated immediately after each task.
   Watch live containers with `modal app list` (app `r35k-oracle-gate`).
+
+## Feeding the completeness checklist
+
+This gate answers dimensions 8–9 (`oracle-passes`, `noop-fails`) of the QC checklist
+([`../../QC_CHECKLIST.md`](../../QC_CHECKLIST.md)). To let `aggregate.py --require-complete`
+see that a task's oracle/no-op were actually run, convert the results TSV into
+`qc_out/behavioral_signals.json` — a map `{task: {"oracle": 1|0, "noop": 1|0}}`
+(1 = oracle passed, 0 = no-op failed, i.e. the good outcomes):
+
+```bash
+# OK -> oracle:1,noop:0 ; ORACLE-FAIL -> oracle:0 ; NOOP-PASS -> noop:1
+python3 - _local/oracle_results.txt qc_out/behavioral_signals.json <<'PY'
+import json, sys
+sig = {}
+for line in open(sys.argv[1]):
+    parts = line.rstrip("\n").split("\t")
+    if len(parts) < 2:
+        continue
+    task, verdict = parts[0], parts[1]
+    d = sig.setdefault(task, {})
+    if verdict == "OK":
+        d["oracle"], d["noop"] = 1, 0
+    elif verdict == "ORACLE-FAIL":
+        d["oracle"] = 0
+    elif verdict == "NOOP-PASS":
+        d["noop"] = 1
+json.dump(sig, open(sys.argv[2], "w"), indent=2)
+print(f"wrote {len(sig)} tasks -> {sys.argv[2]}")
+PY
+```
+
+A task without an entry here stays `qc-incomplete` under `--require-complete` — the
+gate will not let it pass on the reviewer alone.

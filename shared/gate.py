@@ -29,6 +29,7 @@ Usage:
     python gate.py <findings-dir> [--out-dir <dir>] [--quarantine-warn]
 """
 import argparse
+import json
 import os
 from collections import defaultdict
 
@@ -36,15 +37,30 @@ from common import FAIL, WARN, layer_of
 import aggregate
 
 
-def partition(findings_dir, quarantine_warn=False):
+def partition(findings_dir, quarantine_warn=False, require_complete=False,
+              require_adversary=True, require_behavioral=True):
     """Return (quarantine, promote, by_layer) from a cumulative findings dir.
 
     quarantine: list of (task, [layers], [defect titles]) for blocked tasks.
     promote:    sorted list of task names that advance to the next layer.
     by_layer:   {layer: count} of quarantined tasks, for the summary.
+
+    With require_complete, a task missing any evidence-backed QC dimension is
+    quarantined as `qc-incomplete` (same completeness gate as aggregate.py).
     """
     findings = aggregate.load_findings(findings_dir)
     findings, _ = aggregate.reconcile(findings)
+    if require_complete:
+        bmap = {}
+        bsig = os.path.join(findings_dir, "behavioral_signals.json")
+        if os.path.isfile(bsig):
+            try:
+                bmap = json.load(open(bsig))
+            except (OSError, ValueError):
+                bmap = {}
+        findings, _ = aggregate.inject_coverage(
+            findings, bmap, require_adversary=require_adversary,
+            require_behavioral=require_behavioral)
     tasks = aggregate.per_task(findings)
     rows = aggregate.verdicts(tasks)
 
@@ -73,11 +89,23 @@ def main():
     ap.add_argument("--out-dir", default=None)
     ap.add_argument("--quarantine-warn", action="store_true",
                     help="also quarantine WARN tasks (default: only FAIL blocks; WARN promotes)")
+    ap.add_argument("--require-complete", action="store_true",
+                    help="quarantine any task missing an evidence-backed QC dimension "
+                         "(qc-incomplete) — six reviewer dims + adversary cheat-vector + the "
+                         "two behavioral dims (oracle/no-op). Matches aggregate.py.")
+    ap.add_argument("--no-require-adversary", action="store_true",
+                    help="with --require-complete, exempt the adversary cheat-vector dimension.")
+    ap.add_argument("--no-require-behavioral", action="store_true",
+                    help="with --require-complete, exempt the two behavioral dimensions.")
     args = ap.parse_args()
     out_dir = args.out_dir or args.findings_dir
     os.makedirs(out_dir, exist_ok=True)
 
-    quarantine, promote, by_layer = partition(args.findings_dir, args.quarantine_warn)
+    quarantine, promote, by_layer = partition(
+        args.findings_dir, args.quarantine_warn,
+        require_complete=args.require_complete,
+        require_adversary=not args.no_require_adversary,
+        require_behavioral=not args.no_require_behavioral)
 
     qpath = os.path.join(out_dir, "quarantine.txt")
     with open(qpath, "w") as f:

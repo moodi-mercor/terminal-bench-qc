@@ -109,7 +109,9 @@ Writes per-gate findings JSON plus the SSOT and distribution reports into `qc_ou
 
 ### 3. Parts 2–3 — semantic QC (LLM judging)
 The reviewer and adversary criteria + ready-to-run prompts are in
-[`QC_GUIDE.md`](../../QC_GUIDE.md) (Parts 2–3). Each writes one JSON file to `qc_out/`:
+[`QC_GUIDE.md`](../../QC_GUIDE.md) (Parts 2–3); the per-dimension checklist and the
+exact `judge.py` + Modal commands are in [`QC_CHECKLIST.md`](../../QC_CHECKLIST.md).
+Each writes one JSON file to `qc_out/`:
 
 - **Reviewer** → `sem_<task>.json` — the 6 semantic checks (instruction↔verifier
   alignment, coverage, hygiene, golden-patch, realism, agentic/valid-constraints)
@@ -131,6 +133,10 @@ Two ways to run the judging:
   python scripts/judge.py <tasks> --out-dir qc_out --static-dir qc_out \
       --role reviewer            # add --role both to also run the adversary
   ```
+  **Coverage contract (anti-skip):** the reviewer must emit exactly one finding per
+  dimension (`alignment`/`coverage`/`hygiene`/`golden-patch`/`realism`/`constraints`),
+  each with non-empty `file:line` evidence. A skipped dimension — or a `PASS` with no
+  evidence — is injected as a `dimension-not-assessed` FAIL so it can't slip through.
 - **Interactive** — dispatch one reviewer + one adversary sub-agent per task from a
   Claude Code session (same prompts), for hands-on review of a few tasks.
 
@@ -142,6 +148,15 @@ Re-run once the semantic (and any externally-supplied behavioral) findings land 
 `qc_out/`: refuted false positives are dropped (precision) and new semantic +
 cheat-vector findings fold in (recall), so the SSOT and distribution cover every
 part.
+
+**Stringent per-delivery QC — `--require-complete`.** Add it to `aggregate.py`
+(and `gate.py`) to fail any task as `qc-incomplete` unless *every* QC dimension was
+assessed with evidence — the six reviewer dims, the adversary cheat-vector, and the
+two behavioral dims (oracle passes / no-op fails, read from
+`qc_out/behavioral_signals.json`). A task then only promotes once judging **and** a
+Modal oracle/no-op run have both covered it. Off by default (keeps the precision/recall
+eval harness unaffected); see [`QC_CHECKLIST.md`](../../QC_CHECKLIST.md) for the full
+per-dimension run order and the behavioral-signals format.
 
 ## Verdict rules
 
