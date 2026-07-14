@@ -247,7 +247,7 @@ def _dockerfile_copies(root, name):
                                    location="environment/Dockerfile",
                                    fix="Remove the COPY; tests/ is mounted at verify time only."))
             else:
-                out.append(finding(name, "dockerfile", WARN, "dockerfile-copies-env-tests",
+                out.append(finding(name, "dockerfile", FAIL, "dockerfile-copies-env-tests",
                                    detail=f"Dockerfile copies `{src}` (environment/{src.lstrip('./')}), "
                                           "a build fixture dir, not the grading tests/. Confirm it "
                                           "holds only agent-facing contract/fixture files, no answer key.",
@@ -256,7 +256,7 @@ def _dockerfile_copies(root, name):
                                        "purpose; the grading tests/ live at the task root and are not "
                                        "in this build context."))
         elif HINT_NAMES.search(os.path.basename(low)):
-            out.append(finding(name, "dockerfile", WARN, "dockerfile-copies-hint-file",
+            out.append(finding(name, "dockerfile", FAIL, "dockerfile-copies-hint-file",
                                detail=f"Dockerfile copies `{src}`, whose name suggests "
                                       "it may contain solution hints/notes.",
                                location="environment/Dockerfile",
@@ -292,7 +292,7 @@ def _tests_bake(root, name):
 
     surviving = [p for p in file_writes if not covered(p)]
     if not surviving:
-        return [finding(name, "anti_cheat", WARN, "tests-bake-removed",
+        return [finding(name, "anti_cheat", FAIL, "tests-bake-removed",
                         detail=f"Build writes into /tests ({sorted(set(file_writes))}) "
                                "but a later rm removes it. Verify the rm actually runs.",
                         location="environment/Dockerfile",
@@ -308,7 +308,7 @@ def _tests_bake(root, name):
                         location="environment/Dockerfile",
                         fix="Move the artifact to source tests/.truth/ (mounted at verify "
                             "time), remove the build write, re-run oracle to confirm reward=1.")]
-    return [finding(name, "anti_cheat", WARN, "tests-bake-unread",
+    return [finding(name, "anti_cheat", FAIL, "tests-bake-unread",
                     detail=f"Build bakes {sorted(set(surviving))} into /tests with no "
                            "detected verifier read (dead or indirect).",
                     location="environment/Dockerfile",
@@ -387,7 +387,7 @@ def _truth_bake(root, name):
         # the agent is told about (e.g. a "provided control file"), not hidden
         # truth — downgrade to WARN for manual confirmation rather than FAIL.
         if _all_instruction_referenced(read_hits, root):
-            return [finding(name, "anti_cheat", WARN, "verifier-reads-instruction-input",
+            return [finding(name, "anti_cheat", FAIL, "verifier-reads-instruction-input",
                             detail=f"Verifier reads build-baked path(s) {read_hits}, but "
                                    "they are referenced in instruction.md — likely "
                                    "legitimate task input, not leaked truth.",
@@ -403,7 +403,7 @@ def _truth_bake(root, name):
                         fix="Move the truth artifact under tests/ (verify-time mount); "
                             "remove the agent-visible bake; re-run oracle.")]
     if config_spec:
-        return [finding(name, "anti_cheat", WARN, "verifier-reads-config-spec",
+        return [finding(name, "anti_cheat", FAIL, "verifier-reads-config-spec",
                         detail=f"Verifier reads build-baked config/spec file(s) {config_spec} "
                                "the agent can also see. Usually the TARGET the agent must "
                                "satisfy (a config/version to propagate), not a baked answer "
@@ -412,7 +412,7 @@ def _truth_bake(root, name):
                         fix="If it is task spec/config, fine; if it holds the expected answer, "
                             "move it under tests/ (verify-time) and re-run the oracle.")]
     if truthy:
-        return [finding(name, "anti_cheat", WARN, "truth-named-baked",
+        return [finding(name, "anti_cheat", FAIL, "truth-named-baked",
                         detail=f"Truth-named artifact(s) baked into agent-visible paths "
                                f"{truthy}; verifier read not statically detected.",
                         location="environment/Dockerfile",
@@ -460,7 +460,7 @@ def _reference_solve_reads_truth(root, name):
                         location="solution/solve.sh",
                         fix="Make the reference solve the task for real; move the truth file to "
                             "tests/.truth/ (verify-time only) so neither agent nor solve can read it.")]
-    return [finding(name, "anti_cheat", WARN, "reference-reads-instruction-input",
+    return [finding(name, "anti_cheat", FAIL, "reference-reads-instruction-input",
                     detail=f"solution/solve.sh reads {hits}, but they are referenced in "
                            "instruction.md — likely legitimate task input, not the answer.",
                     location="solution/solve.sh",
@@ -500,7 +500,7 @@ def _baked_secrets(root, name):
     if not hits:
         return []
     shown = sorted(hits)[:6]
-    return [finding(name, "anti_cheat", WARN, "secret-baked-in-image",
+    return [finding(name, "anti_cheat", FAIL, "secret-baked-in-image",
                     detail=f"agent-visible file(s) contain credential-shaped data {shown} — "
                            "a leaked secret / personal data the agent shouldn't see.",
                     location="environment/",
@@ -536,7 +536,7 @@ def _chmod_not_a_guard(root, name):
     flagged = sorted(set(flagged))
     if not flagged:
         return []
-    return [finding(name, "anti_cheat", WARN, "chmod-not-a-guard",
+    return [finding(name, "anti_cheat", FAIL, "chmod-not-a-guard",
                     detail=f"Build `chmod 400/000` on answer/grader file(s) {flagged} while "
                            "the agent runs as root (no USER drop) — root reads them regardless "
                            "of mode and can restore it, so the permission is not real protection.",
@@ -630,7 +630,7 @@ def _pycache_leak(root, name):
     residue_real = runs_module or any(_imports_local(os.path.basename(p)) for p in rm_gen)
     if _RUNS_PY.search(btxt) and rm_gen and not _PYC_CLEAN.search(btxt) and residue_real:
         how = "as a module (`python -m`)" if runs_module else "and imports a local sibling module"
-        out.append(finding(name, "anti_cheat", WARN, "pycache-residue-after-script-removal",
+        out.append(finding(name, "anti_cheat", FAIL, "pycache-residue-after-script-removal",
                            detail=f"the build runs a python generator {how} and then removes its source "
                                   f"({sorted(set(rm_gen))[:4]}) but never cleans __pycache__/*.pyc and does "
                                   "not set PYTHONDONTWRITEBYTECODE — the compiled bytecode is cached and "

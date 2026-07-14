@@ -62,18 +62,28 @@ def fetch_files(tid, name):
     out = {}
     inst = cached(name, "instruction.md")
     if inst is None:
-        try:
-            govern()
-            files = requests.get(f"{SAPI}/snapshots/task/{tid}/input-files", headers=SH, timeout=60).json().get("files", [])
-            for f in files:
-                raw = f["key"]; i = raw.find("filesystem/"); fs = raw[i:] if i >= 0 else raw
-                rel = fs[len("filesystem/"):] if fs.startswith("filesystem/") else fs
-                if rel == "instruction.md" or rel.startswith("tests/"):
-                    govern()
-                    j = requests.get(f"{SAPI}/snapshots/task/{tid}/file-url", headers=SH, params={"file_path": fs}, timeout=60).json()
-                    out[rel] = requests.get(j["url"], timeout=120).content.decode(errors="replace")
-        except Exception as e:
-            out["_err"] = str(e)
+        dst = f"{CACHE}/{name}"
+        for attempt in range(3):
+            try:
+                govern()
+                r = requests.get(f"{SAPI}/snapshots/task/{tid}/input-files", headers=SH, timeout=60)
+                if r.status_code == 429:
+                    time.sleep(30); continue
+                files = r.json().get("files", [])
+                for f in files:
+                    raw = f["key"]; i = raw.find("filesystem/"); fs = raw[i:] if i >= 0 else raw
+                    rel = fs[len("filesystem/"):] if fs.startswith("filesystem/") else fs
+                    if rel == "instruction.md" or rel.startswith("tests/"):
+                        govern()
+                        j = requests.get(f"{SAPI}/snapshots/task/{tid}/file-url", headers=SH, params={"file_path": fs}, timeout=60).json()
+                        content = requests.get(j["url"], timeout=120).content
+                        out[rel] = content.decode(errors="replace")
+                        local = f"{dst}/{rel}"          # persist so re-runs skip the fetch
+                        os.makedirs(os.path.dirname(local), exist_ok=True); open(local, "wb").write(content)
+                if out.get("instruction.md"):
+                    break
+            except Exception as e:
+                out["_err"] = str(e); time.sleep(10)
     else:
         out["instruction.md"] = inst
         for fn in ("test_outputs.py", "test.sh"):
@@ -133,6 +143,12 @@ def cap(s, n):
 
 def work(tid, traj, name, model):
     ff = fetch_files(tid, name)
+    # GUARD: never let the judge guess on missing context (silent fetch failure -> spurious brittle).
+    has_tests = any(k.startswith("tests/") for k in ff)
+    if not ff.get("instruction.md") or not has_tests:
+        return {"task_id": tid, "task_name": name, "verdict": "uncertain",
+                "issue": "context unavailable (instruction/tests not fetched)", "confidence": "low",
+                "n_failed": 0, "n_passed": 0}
     at = fetch_attempt(traj)
     tests = "\n".join(f"--- {k} ---\n{cap(v,25000)}" for k, v in ff.items() if k.startswith("tests/")) or "<none>"
     prompt = JUDGE.format(instruction=cap(ff.get("instruction.md", "<missing>"), 16000), tests=tests,

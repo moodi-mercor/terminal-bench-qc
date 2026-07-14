@@ -35,7 +35,7 @@ import os
 import re
 from collections import Counter, defaultdict
 
-from common import WARN, PASS, finding, emit, discover_tasks, task_paths, load_toml, get
+from common import FAIL, WARN, PASS, finding, emit, discover_tasks, task_paths, load_toml, get
 
 DATASET = "__dataset__"
 CAT_MAX = 0.20      # no category > 20% of tasks
@@ -85,6 +85,16 @@ def main():
     rows = collect(tasks)
     n = len(rows)
     findings = []
+
+    # task-name uniqueness (spec §82 "must not collide with any other task name"). This is
+    # an identity requirement, not a diversity distribution — it is a hard FAIL, not a floor/cap.
+    name_counts = Counter(name for name, _root in tasks)
+    for dupe, c in name_counts.items():
+        if c > 1:
+            findings.append(finding(DATASET, "dataset", FAIL, "duplicate-task-name",
+                                    detail=f"task name '{dupe}' is used by {c} tasks — names must be unique.",
+                                    location="dataset",
+                                    fix="Rename the colliding tasks so every task name is unique."))
     L = ["# Terminal-Bench QC — Diversity Report", "", f"- **Tasks:** {n}", ""]
 
     if n == 0:

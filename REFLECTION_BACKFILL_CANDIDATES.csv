@@ -1,0 +1,133 @@
+reflection_category,task_id,task_name,avg8_measured_pass,opus_avg8,gpt_avg8,model_pass_rate
+Debugging & Repair,task_dc279ecf333c4fcdb6e3b041a283092e,aerospace-ledger-pipeline,no,,,0.0
+Systems/Infra/Ops,task_5d51762ae1884a3ebe2b3bea76d4a6f4,agv-shadow-sync-generator,no,,,0.0
+File & Media Ops,task_7782c571b0ee4007845f11b2295c41ce,assembly-cache-redactor,no,,,0.0
+Machine Learning/AI,task_d10692b65b244a26a7720512c4c151c5,atomic-lineage-orchestrator,yes,0.0000,0.7143,0.0
+File & Media Ops,task_2b0783da9233422baa4d56200157cbde,audit-crosswalk-idempotence,no,,,0.0
+Machine Learning/AI,task_c732aeca4193451587595e014b034f95,batch-cache-policy-gate,no,,,0.0
+Systems/Infra/Ops,task_83d69b69ed38496a9e99ff62810ffea3,booth-attestation-sync,yes,0.0000,0.0000,0.0
+File & Media Ops,task_f68b5d0c2cb64cb5aaa0a1289328a002,booth-ingest-atomic-write,no,,,0.0
+Debugging & Repair,task_ca6553273c4d406ca17bc17ae80675d1,booth-invalidation-pipeline,no,,,0.0
+Systems/Infra/Ops,task_390b3901b7074d099fcffb3ded2f0519,broadcast-compliance-pipeline-2,yes,0.2500,0.0000,0.0
+Machine Learning/AI,task_3917e3194a914f339547ccf1c466d5ac,broadcast-ingest-partitioner,yes,0.4286,0.4000,0.0
+Systems/Infra/Ops,task_c510e3e9ca7a4bbaac7413ddd44f0e06,broadcast-journal-translator,no,,,0.0
+Systems/Infra/Ops,task_d13725df713e460b860e307983e27ac8,broadcast-manifest-parser,no,,,0.0
+Machine Learning/AI,task_34636b354a8b4f17ad9b13ca585e70a2,build-broadcast-compliance-router-pipeline,no,,,0.0
+Debugging & Repair,task_3c72c235f39a491e875b6b317a8e59a3,calibration-ledger-triage,no,,,0.0
+Machine Learning/AI,task_0e8f4f17021c4c028d6363465fc6df72,canary-shift-transfer-packager,no,,,0.0
+File & Media Ops,task_9692b9e5c9ad4f7982609e940bab1fbb,canonical-twin-compiler,yes,0.1250,0.0000,0.0
+Machine Learning/AI,task_b034726b2aab463ca3aa43a8364fc2c5,cert-line-deployer,yes,0.0000,0.0000,0.0
+Systems/Infra/Ops,task_1e12c0c726534800aa8446eb96b3f4ae,chassis-offload-exhibit-salvage,yes,0.1250,0.0000,0.0
+File & Media Ops,task_1022eb63cdb7417a9720094641386f79,cold-chain-certification-pipeline,no,,,0.0
+Systems/Infra/Ops,task_9be48f6a55a84408abaffc1a90b1c43b,cold-chain-envelope-parser,no,,,0.0
+Machine Learning/AI,task_04f040a74a6047928fbcb60b7c781125,cold-chain-ledger-mixture-extend-eval,yes,0.0000,0.0000,0.0
+Machine Learning/AI,task_9b64c144df244e06b0dffda8010992a8,cold-chain-provenance-bridge,yes,0.1250,0.0000,0.0
+Debugging & Repair,task_0c0de0736e7548c6ad65e0eb66282853,concurrency-reconciliation-engine,no,,,0.0
+Data Querying/DB,task_9129bb012db241d490938e903d747aff,contamination-overreach-trace,yes,0.3750,0.0000,0.0
+Machine Learning/AI,task_382109d62da349b6bfe6f879905463cc,continuity-agent-clearance,yes,0.0000,0.0000,0.0
+Debugging & Repair,task_100819dba4fd4e6a9639c93dd9e55917,cuda-graph-bisect-orchestrator,yes,0.0000,0.0000,0.0
+File & Media Ops,task_8b0f7e1e34474e0ab4990960010da846,device-shadow-rebuilder,no,,,0.0
+Debugging & Repair,task_9dbfa885237e467d8ca171e667b1acfd,dra-allocation-hang-attributor,no,,,0.0
+Systems/Infra/Ops,task_9bc07f06578649a59aeb04fd57243704,ebpf-fleet-calibration-pipeline,no,,,0.0
+Systems/Infra/Ops,task_7df480f8b4554fb786170a70a596c27f,ebpf-map-reconciliation-ledger,no,,,0.0
+Machine Learning/AI,task_9eb28e0a6fdf40bc8bb12ccc3fc0d0bf,edge-predictor-probe-exporter,yes,0.1250,0.6250,0.0
+Debugging & Repair,task_87e132c5ca4b459ebc408aeab804977c,envelope-lock-order-audit,no,,,0.0
+Debugging & Repair,task_96902e65f1d34594b11edfe9a0dfe980,evidence-kiosk-shadow-reconciliation,yes,0.0000,1.0000,0.0
+File & Media Ops,task_fbcad4b413aa4711a6478722dd84cd5b,evidence-pipeline-rehydration,yes,0.5000,0.2500,0.0
+Debugging & Repair,task_a4f246d596ea4329909e834c2654ef37,factory-calibration-pathfinder,no,1.0000,0.8750,0.0
+Systems/Infra/Ops,task_8444e16e93364f0190afae944cd1b666,factory-ledger-builder,no,,,0.0
+Systems/Infra/Ops,task_1f762beb569b497891c5db36a2460919,flatcar-mesh-telemetry-cache,yes,0.0000,0.0000,0.0
+Machine Learning/AI,task_4e8c1487ae924a26a3691d965891704d,frontier-compiler-streaming,no,,,0.0
+Systems/Infra/Ops,task_7776c6e9c71041e59290a5f62d93e715,grpcroute-conformance-auditor,no,,,0.0
+Machine Learning/AI,task_c0d4d87c57e34e4494c24fe4c261b35e,hospital-instrument-bridge-evaluator,yes,0.0000,0.0000,0.0
+Machine Learning/AI,task_8c4974872e5d45d6a39fbb4cc1aaf091,hpc-ablation-daemon,yes,0.2500,0.0000,0.0
+Machine Learning/AI,task_a57bd3644e1a48b4a154a2d520b5215e,hpc-build-noise-detector,no,1.0000,1.0000,0.0
+Systems/Infra/Ops,task_f2ea9f84cc8b46d7a67f98848e39f487,hpc-dossier-pipeline-audit,yes,0.2500,0.0000,0.0
+Machine Learning/AI,task_90845b6e16eb410087e91767b8756de2,hpc-footprint-profiler,no,,,0.0
+File & Media Ops,task_aed19c03c5c44385b04d329a07c758ae,hpc-journal-auditor-2,no,,,0.0
+Systems/Infra/Ops,task_92d035017aa04f8b85e2c0b28995da01,hpc-nvme-rebind-modeler,yes,0.0000,0.0000,0.0
+File & Media Ops,task_0ecbec965bd043f9adc571627130cc9e,implement-case-collision-detector,no,,,0.0
+Systems/Infra/Ops,task_4a8489e0db3a49178d4b8be7a871f6eb,implement-daemonset-rollout-risk-reporter,no,,,0.0
+Machine Learning/AI,task_a1988c5ba51545d59002030be9432214,implement-mixture-weight-ablation-handoff,yes,0.0000,0.0000,0.0
+Systems/Infra/Ops,task_f4e6134760b042758dac86cdd1f67ae3,iot-firmware-builder-quoting-token-format-broken,no,,,0.0
+Systems/Infra/Ops,task_1a54430c6af542fd99cf82d9f57efd6a,kiosk-identity-rollover,no,,,0.0
+File & Media Ops,task_c20c55244b79414cbe8681de8e3bab84,lab-bridge-ingest-pipeline,no,,,0.0
+Data Querying/DB,task_4eeab3b3feaa49c88ddbdbbe6d9dc3b1,ledger-partition-audit,yes,0.0000,0.0000,0.0
+Machine Learning/AI,task_49d03241fecc4fa2a03a79a61ff9c0ae,maritime-artifact-purge-pipeline,yes,0.0000,0.0000,0.0
+Debugging & Repair,task_41bf9c7ab43c44f1ba741ea9ad527fa2,maritime-trailer-extractor,no,,,0.0
+Machine Learning/AI,task_417a80661bb541ea8eb423e743f04e91,microgrid-approval-journal,no,,,0.0
+Machine Learning/AI,task_293f38796f074d7bae230091a9502257,museum-exhibit-sidecar,yes,0.3750,0.0000,0.0
+Machine Learning/AI,task_1c71f29c8f5c40038c16daa5a0df569f,museum-silhouette-pipeline,yes,0.0000,0.0000,0.0
+Debugging & Repair,task_45a62123676a44028071438bd0d664cd,operator-approval-indexer,yes,0.0000,0.0000,0.0
+Systems/Infra/Ops,task_29dcb4d2c70c4df7b88b8c87e7058584,operator-journal-daemon-v2,yes,0.0000,0.1250,0.0
+Debugging & Repair,task_421646e4467543e6b2f06fd6e2aabc79,otel-baggage-analyzer,no,,,0.0
+File & Media Ops,task_88ff9b4102714dee9e31feda391c744e,port-schedule-pipeline,yes,0.0000,0.5000,0.0
+Debugging & Repair,task_91c0c8e850bc4c468f58353547ea880f,pty-journal-parser-booth,no,,,0.0
+File & Media Ops,task_eaed7a91deb6464ca56cf7bbab65452e,pty-ledger-reconciler,no,,,0.0
+Machine Learning/AI,task_602a498bc3c543c5a1fdfdade24dd97e,rail-canary-evidence-builder,no,,,0.0
+Machine Learning/AI,task_10600b914eab431386e72171d0c3192f,rail-yard-consumer-skew,yes,0.0000,0.0000,0.0
+Machine Learning/AI,task_3ad36f82de5347c8903dab08b17cb413,rail-yard-dispatch-partitioner,no,,,0.0
+Systems/Infra/Ops,task_65cf5861f1de476b915ea5240d409654,rail-yard-projection-builder,no,,,0.0
+File & Media Ops,task_55a7936a95d74f548a886ac96dc633bf,rail-yard-state-orchestrator,yes,0.1250,0.2500,0.0
+Machine Learning/AI,task_6a47c82bf7534aadad929626b902ddfe,railyard-probe-ingestor,no,,,0.0
+Systems/Infra/Ops,task_0b0b9737843b4db29e280afd0b8d469c,satellite-identity-reconciler,no,,,0.0
+Systems/Infra/Ops,task_5029059ab0214fefa4edd322918afa1b,satellite-journal-extractor,no,,,0.0
+Debugging & Repair,task_a9d6844935b2428daf6f718ae157d6e5,satellite-packet-audit-pipeline,yes,0.0000,0.1250,0.0
+Machine Learning/AI,task_1875c593491147f58244a50f5c439f4a,satellite-spool-reconciler,no,,,0.0
+Systems/Infra/Ops,task_c6d529f4798e438882294384c76610e6,slice-rebalancer-pipeline,no,,,0.0
+Data Querying/DB,task_3964466df6ee4feb91cfa82d87a92fb9,spectrometer-wal-recovery,no,,,0.0
+Debugging & Repair,task_afc8052c17c04bf2bb2ad9009907783a,spool-correlation-pipeline,yes,0.0000,0.0000,0.0
+Machine Learning/AI,task_2063471c9b7a4dfe897a50b2f7ccc819,spool-kiosk-orchestration,yes,0.0000,0.0000,0.0
+Debugging & Repair,task_7850257289224aafa624e2f43629e51c,spool-state-analyzer,no,,,0.0
+Machine Learning/AI,task_3785678f8b5f42b8ba3607f1a0f04251,spool-trace-collation,no,0.7500,1.0000,0.0
+Data Querying/DB,task_98ef2b266aa048e396f35e0902123323,sqlite-fts5-v2,no,,,0.0
+Machine Learning/AI,task_4a133d9937964c528f3649c9a8de09d3,stale-artifact-stream-replay,yes,0.0000,0.0000,0.0
+Debugging & Repair,task_c9514b6fadcd44e892b9efb7c695f70a,stale-cache-redrive,yes,0.5000,1.0000,0.0
+Machine Learning/AI,task_fe654dd56d454777a21d309ae50d06ee,stale-capabilities-pin-leak,no,,,0.0
+Machine Learning/AI,task_3fe131aae91f4be29fd7babfa18e7a97,stale-probe-artifact-reload,yes,0.1250,0.0000,0.0
+File & Media Ops,task_1eaace3caf474ff6805315d9e45b12ca,stale-shadow-persistence,no,,,0.0
+Debugging & Repair,task_e9f30b215e0c4312bb5647f93f010796,stale-wasm-cache-jitter-triage,no,,,0.0
+Machine Learning/AI,task_34d902a5aa1a4e1e9403e3a0f62033b1,stale-zarr-snapshot-quarantine,yes,0.2500,0.3750,0.0
+Systems/Infra/Ops,task_89693d7047fd4b169e07082d8a75ca93,stevedore-determinism-engine,no,,,0.0
+Systems/Infra/Ops,task_48a1672a06e84dd98db756d7eaf78821,telehealth-ingest-reconciler,no,,,0.0
+Debugging & Repair,task_bd4a17be38e74ce4b1c593f4131f2940,telemetry-batch-daemon,no,,,0.0
+Data Querying/DB,task_5dd0425bc4194087acf371d16ac6aaa5,telemetry-cascading-drop,yes,0.0000,0.0000,0.0
+Systems/Infra/Ops,task_1fd5a1612a474faea43670d0e1d92be3,telemetry-compliance-pipeline,no,,,0.0
+Debugging & Repair,task_cc5fe41fd9ba4b55a8b4b4706a5c7645,telemetry-replay-boundary,no,,,0.0
+Debugging & Repair,task_ea4bb8a9c17c4baa8c9bb57b081e523a,telemetry-schema-replay,no,,,0.0
+Machine Learning/AI,task_d7c488ad257a4531badc84f42bd6d520,tensor-queue-router,no,,,0.0
+Systems/Infra/Ops,task_1e40f222401f431cb08361fcb7b5b4ac,tick-data-truncation,yes,0.0000,0.0000,0.0
+File & Media Ops,task_2262663f940d4bcd98f497aaf15819c6,zarr-shard-batch-sweep,no,,,0.0
+Machine Learning/AI,task_c1dc80bc0e414279b4e3bde64d6ef9ca,alignment-gate-pipeline,yes,0.2500,0.0000,0.333
+File & Media Ops,task_81d4851385bc47b8980caf84be98adf7,atomic-cas-compaction-pipeline,yes,0.4286,0.6250,0.333
+Systems/Infra/Ops,task_5c734eabc49148c8a6bd5cfa944b29c9,audit-bundle-aggregator,yes,0.5000,0.1250,0.333
+Debugging & Repair,task_a2a961f203064895877f943dd2129e2f,audit-indexer-seal,yes,0.0000,0.1250,0.333
+Debugging & Repair,task_7cf69bc0a49d4fb9bbea16851bbdabd4,calibration-envelope-validator,no,0.8750,0.8750,0.333
+Data Querying/DB,task_78222ba7b6a549ed91cac616e303f0a3,cart-session-cascade,yes,1.0000,0.0000,0.333
+Machine Learning/AI,task_0d4a6a0f71894da2807d2a31ba4be0d8,checkpoint-spool-concurrency,yes,0.0000,0.0000,0.333
+Debugging & Repair,task_b92b49eb0bba4b33bbc95c471cd2bd1c,compliance-evidence-pipeline,no,,,0.333
+Data Querying/DB,task_12010a879011421390d24d0f0e7f0b4d,esports-leaderboard,yes,0.8750,0.2500,0.333
+Debugging & Repair,task_3c796b9256324c14a59b20b287efc8fe,evd-trace-localizer,no,,,0.333
+Systems/Infra/Ops,task_a8f8db14c16543368e2aaccb447193c7,exhibit-shadow-builder,yes,0.1250,0.0000,0.333
+Debugging & Repair,task_6f3784613da644f598d39da83877eb6c,flaky-telemetry-coordinator,yes,0.0000,0.0000,0.333
+Machine Learning/AI,task_48c1fb48d3e24ab1ab59bc487052a707,fsdp-orchestrator-skew,no,,,0.333
+Data Querying/DB,task_7b52ffa6f4214d70ab7f66d9356b8709,graphql-batching-path-repair,yes,0.7500,0.5000,0.333
+Systems/Infra/Ops,task_0b1fb636eca248a2b0688da5a42f34b0,kiosk-bundle-compiler,no,0.7500,1.0000,0.333
+Systems/Infra/Ops,task_b219b16299f243af8c9075a0b010c801,ledger-schema-skew-readiness,no,,,0.333
+File & Media Ops,task_e0e66a51b61e4785b8cbe16cfa57d93d,ledger-timezone-rollup,yes,0.2500,0.0000,0.333
+Machine Learning/AI,task_5776ce913ea449d5974bc78511390180,microgrid-tensor-spooler,yes,0.1250,0.3750,0.333
+Data Querying/DB,task_2f9ecbafd2044552b76c3306ed5b8114,migrate-pgvector-to-halfvec-and-fix-l2-search,no,,,0.333
+Machine Learning/AI,task_e35a4d168e5d4b9d9a7fef55f358171b,mlx-schema-ledger,yes,0.0000,0.0000,0.333
+Machine Learning/AI,task_7f10de5fd2624e87ad11417e05acfebd,onnx-ledger-variance-auditor,yes,1.0000,0.0000,0.333
+Debugging & Repair,task_edd2f1bc0502488f89f25b6b6fea60b2,port-audit-validator-pipeline,yes,0.6250,0.0000,0.333
+Debugging & Repair,task_5235d28b2c184dd5b2b527295caa53e7,port-settlement-pipeline,yes,0.1250,0.1250,0.333
+Data Querying/DB,task_795041b5f3a34ee6b010880e14f98013,portal-schema-sync-conflict,yes,1.0000,0.2500,0.333
+Systems/Infra/Ops,task_1fe9968f10214ea298b6a362bd701d6b,rig-pipeline-greenfield,no,,,0.333
+Debugging & Repair,task_4b4d40435b20460e80a528121f398595,scada-telemetry-loss,no,,,0.333
+Data Querying/DB,task_f88d14225a3d4e6790f10db884a92b25,siem-audit-signature-pipeline,no,,,0.333
+Data Querying/DB,task_2ee6c310b43149b8bb93f0170b2a7558,sqlite-shell,yes,0.6250,0.3750,0.333
+Systems/Infra/Ops,task_8c7d1df1b1c34db7b5ef6f1c00664e86,stale-build-cache-attestation,yes,0.2500,0.0000,0.333
+Data Querying/DB,task_1242af9b566e46ac8fb74fd215615a4a,topology-bson-truncation-cascades,yes,0.1250,0.6250,0.333
+Debugging & Repair,task_37760bd70a8a4fb5aeff04ff1eaf65e6,voyage-timeline-auditor,yes,0.2500,0.7500,0.333
+File & Media Ops,task_003f639572c74424aeaedf66589723de,satellite-audit-packager,yes,0.3750,0.8750,0.5
+Systems/Infra/Ops,task_0990264390bd4121a7f897fd3d3a8e78,telemetry-sync-recovery,yes,0.1250,1.0000,0.5

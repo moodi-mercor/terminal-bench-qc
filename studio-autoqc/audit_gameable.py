@@ -35,7 +35,7 @@ import requests
 ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), ".."))
 SAPI = "https://api.studio.mercor.com"
 AAPI = "https://api.anthropic.com/v1/messages"
-OUT = f"{ROOT}/_local/gameable_audit"
+OUT = os.environ.get("GAMEABLE_OUT", f"{ROOT}/_local/gameable_audit")
 MAXREQ, WINDOW = 9000, 3600.0
 _req = collections.deque(); _gl = threading.Lock(); _wl = threading.Lock()
 

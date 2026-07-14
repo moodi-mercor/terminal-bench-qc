@@ -9,7 +9,7 @@ need judgment for — so they're caught cheaply on every task:
   - instruction-placeholder   leftover TODO/FIXME/lorem-ipsum/<PLACEHOLDER>/"your
                               answer here" — the task was shipped half-written
   - instruction-too-short     almost no prompt (likely underspecified)
-  - instruction-too-long      over ~1500 tokens (Reflection caps instruction length)
+  - instruction-too-long      over ~1500 tokens (FAIL — Reflection caps instruction length)
   - instruction-relative-path explicit ./ or ../ path the agent must use (Reflection
                               requires absolute paths for files the agent reads/writes)
   - prescriptive-instruction  "spec-sheet" smells — dictated function signatures,
@@ -27,8 +27,8 @@ need judgment for — so they're caught cheaply on every task:
   - instruction-missing       instruction.md absent or empty (also caught by
                               structure, but reported here for the instructions area)
 
-All WARN except the empty/missing case. Kept deliberately conservative — semantic
-review owns the nuanced calls.
+All WARN except the empty/missing and too-long cases, which are FAIL. Kept deliberately
+conservative — semantic review owns the nuanced calls.
 
 Usage:
     python check_instructions.py <tasks-dir> [--out findings_instructions.json]
@@ -164,7 +164,7 @@ def check_task(name, root):
 
     m = PLACEHOLDER.search(text)
     if m:
-        out.append(finding(name, "instructions", WARN, "instruction-placeholder",
+        out.append(finding(name, "instructions", FAIL, "instruction-placeholder",
                            detail=f"instruction.md contains a placeholder/marker "
                                   f"(`{m.group(0).strip()}`) — looks half-written.",
                            location=loc,
@@ -180,10 +180,10 @@ def check_task(name, root):
 
     toks = _est_tokens(text)
     if toks > MAX_TOKENS:
-        out.append(finding(name, "instructions", WARN, "instruction-too-long",
+        out.append(finding(name, "instructions", FAIL, "instruction-too-long",
                            detail=f"instruction.md is ~{toks} tokens (> {MAX_TOKENS}) — "
-                                  "Reflection wants concise prompts that encourage exploration, "
-                                  "not long, over-specified ones.",
+                                  "Reflection caps instruction length; concise prompts that "
+                                  "encourage exploration are required, not long, over-specified ones.",
                            location=loc,
                            fix="Trim backstory/filler and step-by-step recipes; state what "
                                "success looks like, not how to get there."))
@@ -191,7 +191,7 @@ def check_task(name, root):
     rels = sorted({m.group(0) for m in REL_PATH.finditer(text)})
     if rels:
         shown = rels[:5]
-        out.append(finding(name, "instructions", WARN, "instruction-relative-path",
+        out.append(finding(name, "instructions", FAIL, "instruction-relative-path",
                            detail=f"instruction.md uses relative path(s) {shown}"
                                   f"{' …' if len(rels) > 5 else ''} — Reflection requires "
                                   "ABSOLUTE paths for any file the agent must read/modify/create.",
@@ -203,7 +203,7 @@ def check_task(name, root):
     # reviewer decides if the specificity is gratuitous vs verifier-intrinsic.
     smells = _prescriptive_signals(text)
     if len(smells) >= 2:
-        out.append(finding(name, "instructions", WARN, "prescriptive-instruction",
+        out.append(finding(name, "instructions", FAIL, "prescriptive-instruction",
                            detail=f"instruction.md reads like an implementation spec ({'; '.join(smells)}) "
                                   "— it may dictate *how* rather than *what success looks like*, "
                                   "against Reflection's 'simple, exploration-encouraging' bar. "
@@ -215,7 +215,7 @@ def check_task(name, root):
 
     # structured output required but no schema documented (instruction or env spec/sample)
     if _requires_structured_output(text) and not _schema_documented(text, root):
-        out.append(finding(name, "instructions", WARN, "structured-output-undocumented",
+        out.append(finding(name, "instructions", FAIL, "structured-output-undocumented",
                            detail="instruction.md asks for a structured output (JSON/CSV/YAML/"
                                   "config/DB rows/API response) but no schema is documented — no "
                                   "sample/field-list/format block in the prompt and no spec/sample "

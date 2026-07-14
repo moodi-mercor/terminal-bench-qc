@@ -34,6 +34,7 @@ import check_instructions
 import check_verifier_defenses
 import check_security
 import check_test_hygiene
+import check_contract_paths
 import aggregate
 from common import discover_tasks, emit
 
@@ -63,6 +64,7 @@ def main():
         ("verifier_defenses", check_verifier_defenses, "findings_verifier_defenses.json"),
         ("security", check_security, "findings_security.json"),
         ("test_hygiene", check_test_hygiene, "findings_test_hygiene.json"),
+        ("contract_paths", check_contract_paths, "findings_contract_paths.json"),
     ]
     for label, mod, fname in gates:
         findings = []

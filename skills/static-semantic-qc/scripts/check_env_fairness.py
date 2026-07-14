@@ -94,7 +94,7 @@ def check_task(name, root):
     # 1. leftover generators
     gen_left = sorted({b for b in materialised if GEN.search(b) and not cleaned(b)})
     for b in gen_left:
-        out.append(finding(name, "anti_cheat", WARN, "leftover-generator",
+        out.append(finding(name, "anti_cheat", FAIL, "leftover-generator",
                            detail=f"generator `{b}` is left in the agent image (no rm) — "
                                   "the agent can read how the data/answers are produced.",
                            location="environment/",
@@ -104,7 +104,7 @@ def check_task(name, root):
     # 2. uncleaned setup scripts (only those actually copied/materialised in)
     setup_left = sorted({b for b in materialised if SETUP_NAMES.search(b) and not cleaned(b)})
     for b in setup_left:
-        out.append(finding(name, "anti_cheat", WARN, "uncleaned-setup-script",
+        out.append(finding(name, "anti_cheat", FAIL, "uncleaned-setup-script",
                            detail=f"setup script `{b}` remains in the agent image after the "
                                   "build — it may reveal how the environment/answers were set up.",
                            location="environment/",
@@ -114,7 +114,7 @@ def check_task(name, root):
     if re.search(r"\bgit\s+clone\b", btxt):
         removes_git = (".git" in rm_text) or re.search(r"-name\s+['\"]?\.git", btxt)
         if not removes_git:
-            out.append(finding(name, "anti_cheat", WARN, "git-history-exposed",
+            out.append(finding(name, "anti_cheat", FAIL, "git-history-exposed",
                                detail="`git clone` in the build with no `.git` removal — "
                                       "the agent can read git history (future commits / the fix).",
                                location="environment/Dockerfile",
@@ -126,7 +126,7 @@ def check_task(name, root):
     for rel in ("tests/test.sh",):
         t = read_text(os.path.join(root, rel))
         if EXT_URL.search(t):
-            out.append(finding(name, "anti_cheat", WARN, "runtime-network",
+            out.append(finding(name, "anti_cheat", FAIL, "runtime-network",
                                detail=f"`{rel}` fetches an external URL at run time — live "
                                       "dependency (flaky) and a possible fetch-the-answer path.",
                                location=rel,
@@ -148,7 +148,7 @@ def check_task(name, root):
             instr = read_text(os.path.join(root, "instruction.md"))
             genuine = bool(GENUINE_NET.search(instr))
             if not documented and not genuine:
-                out.append(finding(name, "anti_cheat", WARN, "internet-on-undocumented",
+                out.append(finding(name, "anti_cheat", FAIL, "internet-on-undocumented",
                                    detail="allow_internet=true with no documented justification. "
                                           "Reflection requires network OFF by default; any exception "
                                           "must be explicit, minimal, and justified per task.",
@@ -160,7 +160,7 @@ def check_task(name, root):
             t = read_text(os.path.join(root, rel))
             m = RUNTIME_INSTALL.search(t)
             if m:
-                out.append(finding(name, "anti_cheat", WARN, "bakeable-runtime-install",
+                out.append(finding(name, "anti_cheat", FAIL, "bakeable-runtime-install",
                                    detail=f"`{rel}` installs dependencies at run time "
                                           f"(`{m.group(0)[:40]}`). Reflection bakes these at build "
                                           "(pip download / wheels in the image), never at runtime.",

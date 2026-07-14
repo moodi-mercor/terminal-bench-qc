@@ -13,6 +13,7 @@ Emits findings with area="structure".
 import argparse
 import os
 import re
+import subprocess
 
 from common import (FAIL, WARN, PASS, finding, emit, read_text,
                     discover_tasks, task_paths)
@@ -89,7 +90,7 @@ def check_task(name, root):
                 fix="Add a `FROM <base-image>` line."))
         if len(body) <= 1:
             out.append(finding(
-                name, "structure", WARN, "dockerfile-trivial",
+                name, "structure", FAIL, "dockerfile-trivial",
                 detail="Dockerfile is a single line — verify the task needs no "
                        "dependencies or setup.",
                 location="environment/Dockerfile",
@@ -98,13 +99,13 @@ def check_task(name, root):
     # ---- package identity / hygiene ----
     if name and not KEBAB.match(name):
         out.append(finding(
-            name, "structure", WARN, "task-name-not-kebab",
+            name, "structure", FAIL, "task-name-not-kebab",
             detail=f"task name `{name}` is not lowercase kebab-case.",
             location="<task dir>",
             fix="Rename the task to lowercase-kebab-case (e.g. `fix-nginx-tls-config`)."))
     if name and len(name) > MAX_NAME_LEN:
         out.append(finding(
-            name, "structure", WARN, "task-name-too-long",
+            name, "structure", FAIL, "task-name-too-long",
             detail=f"task name is {len(name)} chars (> {MAX_NAME_LEN}) — keep it concise.",
             location="<task dir>",
             fix="Shorten to a specific, meaningful name."))
@@ -123,7 +124,7 @@ def check_task(name, root):
     if junk:
         shown = sorted(set(junk))[:6]
         out.append(finding(
-            name, "structure", WARN, "unnecessary-files",
+            name, "structure", FAIL, "unnecessary-files",
             detail=f"package contains stale/cache/VCS files: {shown}"
                    f"{' …' if len(set(junk)) > 6 else ''}.",
             location="<task dir>",
@@ -142,7 +143,7 @@ def check_task(name, root):
                 pass
     if crlf:
         out.append(finding(
-            name, "structure", WARN, "crlf-line-endings",
+            name, "structure", FAIL, "crlf-line-endings",
             detail=f"Windows CRLF line endings in {crlf} — task files must be Unix-LF "
                    "unless the task explicitly targets Windows.",
             location="<task dir>",
@@ -157,7 +158,7 @@ def check_task(name, root):
                     nontext.append(os.path.relpath(os.path.join(dirpath, fn), root))
     if nontext:
         out.append(finding(
-            name, "structure", WARN, "non-text-asset",
+            name, "structure", FAIL, "non-text-asset",
             detail=f"agent-visible non-text document asset(s): {sorted(nontext)[:5]} — a "
                    "non-multimodal model can't read these.",
             location="environment/",
@@ -172,11 +173,35 @@ def check_task(name, root):
                 and "python" not in t and "assert" not in t and "[ " not in t \
                 and "[[" not in t:
             out.append(finding(
-                name, "structure", WARN, "test-sh-no-visible-checks",
+                name, "structure", FAIL, "test-sh-no-visible-checks",
                 detail="tests/test.sh contains no obvious verifier invocation "
                        "(pytest / python / shell assertions).",
                 location="tests/test.sh",
                 fix="Confirm test.sh actually runs the verifier."))
+
+    # well-formed: python + shell files must be syntactically valid (spec §59)
+    for key, label in (("test_outputs.py", "tests/test_outputs.py"),):
+        path = p[key]
+        if os.path.isfile(path):
+            body = read_text(path)
+            if body.strip():
+                try:
+                    compile(body, label, "exec")
+                except SyntaxError as e:
+                    out.append(finding(
+                        name, "structure", FAIL, "python-syntax-error",
+                        detail=f"{label} has a Python syntax error: {str(e)[:80]} — the verifier "
+                               "cannot run.",
+                        location=label, fix="Fix the syntax error."))
+    for key, label in (("test.sh", "tests/test.sh"), ("solve.sh", "solution/solve.sh")):
+        path = p[key]
+        if os.path.isfile(path) and read_text(path).strip():
+            r = subprocess.run(["bash", "-n", path], capture_output=True, text=True)
+            if r.returncode != 0:
+                out.append(finding(
+                    name, "structure", FAIL, "shell-syntax-error",
+                    detail=f"{label} is not valid bash: {r.stderr.strip()[:80]}.",
+                    location=label, fix="Fix the shell syntax error."))
 
     if not out:
         out.append(finding(name, "structure", PASS, "structure-ok"))

@@ -47,7 +47,7 @@ import glob
 import os
 import re
 
-from common import WARN, PASS, finding, emit, read_text, discover_tasks, task_paths
+from common import FAIL, WARN, PASS, finding, emit, read_text, discover_tasks, task_paths
 import assert_classify
 
 MUTATED = re.compile(r"\b(mutat\w*|regenerat\w*|re[_-]?generate|reshuffl\w*|"
@@ -172,7 +172,7 @@ def check_task(name, root):
     if (guard_line and agent_is_root and "tests/" not in guard_line
             and ".truth" not in guard_line and "/tmp" not in guard_line
             and not REAL_RECOMPUTE.search(txt)):
-        extra.append(finding(name, "tests", WARN, "degenerate-integrity-guard",
+        extra.append(finding(name, "tests", FAIL, "degenerate-integrity-guard",
                              detail=f"`{guard_line.strip()}` compares against an in-image baked "
                                     "reference while the agent runs as root (no USER drop) — the "
                                     "agent overwrites both the file and its reference, so the "
@@ -188,7 +188,7 @@ def check_task(name, root):
     # alternative implementations) and gameable. A source grep ALONGSIDE a real outcome
     # test is an anti-cheat guard, not this defect — so require no functional signal.
     if SOURCE_MATCH.search(txt) and not (RE_EXEC.search(txt) or FUNCTIONAL.search(txt)):
-        extra.append(finding(name, "tests", WARN, "source-match-verification",
+        extra.append(finding(name, "tests", FAIL, "source-match-verification",
                              detail="verifier checks the agent's SOURCE for keywords/patterns "
                                     "(substring/regex/grep) but never executes the program, "
                                     "queries a service/DB, or parses a produced artifact — it "
@@ -208,7 +208,7 @@ def check_task(name, root):
     cls = assert_classify.classify_path(task_paths(root)["test_outputs.py"]).get("file", {})
     if cls.get("all_literal_only"):
         vals = cls.get("literal_values") or []
-        extra.append(finding(name, "tests", WARN, "literal-only-verifier",
+        extra.append(finding(name, "tests", FAIL, "literal-only-verifier",
                              detail="every scored test compares the agent's output only against "
                                     f"hardcoded literals {vals[:8]} — the verifier neither executes "
                                     "the program, queries a service, nor recomputes the expected "
@@ -219,7 +219,7 @@ def check_task(name, root):
                                  "program, or assert on behaviour — don't compare only to baked literals."))
     # (B) wall-clock-dependent reward — measured elapsed time gates the verdict.
     if WALLCLOCK.search(txt) and ELAPSED_ASSERT.search(txt):
-        extra.append(finding(name, "tests", WARN, "wall-clock-dependent-verifier",
+        extra.append(finding(name, "tests", FAIL, "wall-clock-dependent-verifier",
                              detail="verifier measures elapsed wall-clock time and asserts a "
                                     "bound on it — the reward then depends on host speed / CI "
                                     "load, so a correct-but-slow solution flakes. Brittle.",
@@ -229,7 +229,7 @@ def check_task(name, root):
                                  "wall-clock) progress signal."))
     # (C1) self-consistency — expected value sourced from the agent's own output tree.
     if SELF_CONSISTENT.search(txt):
-        extra.append(finding(name, "tests", WARN, "verifier-self-consistent",
+        extra.append(finding(name, "tests", FAIL, "verifier-self-consistent",
                              detail="the verifier's expected/reference value is read from the "
                                     "agent's own writable tree (/app, /workspace, /data, cwd) — "
                                     "nothing external pins the answer, so it can be checking the "
@@ -240,7 +240,7 @@ def check_task(name, root):
                                  "it from the task inputs, not from a file the agent writes."))
     # (C2) filename-encodes-answer — validity decided from a file's name, not content.
     if FILENAME_ENCODES.search(txt):
-        extra.append(finding(name, "tests", WARN, "filename-encodes-answer",
+        extra.append(finding(name, "tests", FAIL, "filename-encodes-answer",
                              detail="the verifier appears to decide pass/validity from a file's "
                                     "NAME (basename/stem matched against a validity label) rather "
                                     "than its content — gameable (rename to match) and brittle.",
@@ -252,7 +252,7 @@ def check_task(name, root):
                                "hardcode / fake-artifact cheats; cheat-vector candidates "
                                "against it are suppressed.",
                         location="tests/")] + extra
-    return [finding(name, "tests", WARN, "verifier-undefended",
+    return [finding(name, "tests", FAIL, "verifier-undefended",
                     detail="verifier shows no mutated-rerun / recompute / source-grep / "
                            "re-execution defense — if it compares only against baked "
                            "literals it is genuinely gameable; a cheat-vector here is credible.",

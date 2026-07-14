@@ -167,7 +167,7 @@ def _analyze_py(path, name, rel):
             dn = d.func if isinstance(d, ast.Call) else d
             attr = getattr(dn, "attr", getattr(dn, "id", "")) or ""
             if attr in ("skip", "skipif", "xfail"):
-                out.append(finding(name, "anti_cheat", WARN, "skipped-scored-test",
+                out.append(finding(name, "anti_cheat", FAIL, "skipped-scored-test",
                                    detail=f"`{node.name}` is decorated `{attr}` — a scored "
                                           "test that may never run (silently un-verifies a "
                                           "requirement).",
@@ -177,14 +177,14 @@ def _analyze_py(path, name, rel):
             if (attr == "parametrize" and isinstance(d, ast.Call) and len(d.args) >= 2
                     and isinstance(d.args[1], (ast.List, ast.Tuple))
                     and len(d.args[1].elts) == 0):
-                out.append(finding(name, "anti_cheat", WARN, "empty-parametrize",
+                out.append(finding(name, "anti_cheat", FAIL, "empty-parametrize",
                                    detail=f"`{node.name}` is parametrized over an EMPTY list "
                                           "— pytest collects zero cases, so it always passes.",
                                    location=loc,
                                    fix="Populate the parametrize cases, or remove the test."))
         # trivial body
         if _is_trivial_body(node.body):
-            out.append(finding(name, "anti_cheat", WARN, "vacuous-test",
+            out.append(finding(name, "anti_cheat", FAIL, "vacuous-test",
                                detail=f"`{node.name}` has a trivial body (pass/return/"
                                       "assert True) — passes without exercising the task.",
                                location=loc,
@@ -193,7 +193,7 @@ def _analyze_py(path, name, rel):
             continue
         # swallowed assertion
         if _swallowed_assertion(node):
-            out.append(finding(name, "anti_cheat", WARN, "swallowed-assertion",
+            out.append(finding(name, "anti_cheat", FAIL, "swallowed-assertion",
                                detail=f"`{node.name}` wraps an assertion in a bare "
                                       "`except: pass` — the assertion can never fail it.",
                                location=loc,
@@ -202,14 +202,14 @@ def _analyze_py(path, name, rel):
         # has assertions? if so, check existence-only
         asserts = [s for s in ast.walk(node) if isinstance(s, ast.Assert)]
         if asserts and all(_assert_is_existence_only(a) for a in asserts):
-            out.append(finding(name, "anti_cheat", WARN, "existence-only-check",
+            out.append(finding(name, "anti_cheat", FAIL, "existence-only-check",
                                detail=f"`{node.name}` only checks file existence, not "
                                       "content — an empty/stub file would pass.",
                                location=loc,
                                fix="Assert on the file's content/value, not just that it exists."))
         elif not _calls_assertion(node):
             # no failure-capable construct anywhere
-            out.append(finding(name, "anti_cheat", WARN, "no-assertion-test",
+            out.append(finding(name, "anti_cheat", FAIL, "no-assertion-test",
                                detail=f"`{node.name}` contains no assertion/raise/fail — "
                                       "it cannot fail.",
                                location=loc,
@@ -218,7 +218,7 @@ def _analyze_py(path, name, rel):
     for m in re.finditer(r"open\(\s*['\"]([^'\"]+)['\"]", src):
         p = m.group(1)
         if REWARDISH.search(os.path.basename(p)):
-            out.append(finding(name, "anti_cheat", WARN, "agent-writable-reward-signal",
+            out.append(finding(name, "anti_cheat", FAIL, "agent-writable-reward-signal",
                                detail=f"verifier reads `{p}` — if the agent can write that "
                                       "path, the pass signal is gameable.",
                                location=rel,
@@ -246,7 +246,7 @@ def _analyze_test_sh(path, name, reflection=False):
         if "|| true" not in ln or install.search(ln) or fileop.search(ln):
             continue
         if verifier.search(ln):
-            out.append(finding(name, "anti_cheat", WARN, "test-sh-swallows-failure",
+            out.append(finding(name, "anti_cheat", FAIL, "test-sh-swallows-failure",
                                detail=f"tests/test.sh line {i} appends `|| true` to the "
                                       "verifier — its failure won't fail the task.",
                                location=f"tests/test.sh:{i}",
@@ -276,7 +276,7 @@ def _analyze_test_sh(path, name, reflection=False):
     neutralised = re.search(r"(?:-m\s+pytest|\bpytest\s+[-/.\w])[^\n]*\|\|", txt)
     if has_sete and not toggles_off and runs_pytest and branches_on_rc \
             and writes_reward and not neutralised:
-        out.append(finding(name, "anti_cheat", WARN, "test-sh-set-e-reward-abort",
+        out.append(finding(name, "anti_cheat", FAIL, "test-sh-set-e-reward-abort",
                            detail="tests/test.sh runs under `set -e` and branches on the "
                                   "verifier's exit code to write the reward — on a failing "
                                   "run `set -e` aborts before the reward=0 write, so a no-op "
@@ -294,7 +294,7 @@ def _analyze_test_sh(path, name, reflection=False):
             if s.startswith("#"):
                 continue
             if RUNTIME_INSTALL.search(ln) or CURL_PIPE_SH.search(ln):
-                out.append(finding(name, "anti_cheat", WARN, "test-runtime-install",
+                out.append(finding(name, "anti_cheat", FAIL, "test-runtime-install",
                                    detail=f"tests/test.sh line {i} installs a dependency at "
                                           "verify time — verifier deps must be preinstalled in "
                                           "the image, not pulled from the network during grading.",
@@ -311,7 +311,7 @@ def _analyze_test_sh(path, name, reflection=False):
             if "$" in rpath or "{" in rpath:
                 continue  # variable-driven path — can't statically resolve
             if rpath and rpath != STD_REWARD_PATH and rpath.startswith("/"):
-                out.append(finding(name, "anti_cheat", WARN, "reward-path-nonstandard",
+                out.append(finding(name, "anti_cheat", FAIL, "reward-path-nonstandard",
                                    detail=f"tests/test.sh writes the reward to `{rpath}`, not the "
                                           f"Harbor-standard `{STD_REWARD_PATH}` (must hold 1/0).",
                                    location=f"tests/test.sh:{i}",
@@ -418,7 +418,7 @@ def _reward_pre_created(name, root, p):
             for fn in files:
                 if fn.lower() in ("reward.txt", "reward"):
                     rel = os.path.relpath(os.path.join(dirpath, fn), root)
-                    out.append(finding(name, "anti_cheat", WARN, "reward-pre-created",
+                    out.append(finding(name, "anti_cheat", FAIL, "reward-pre-created",
                                        detail=f"`{rel}` ships a reward file in the environment "
                                               "image — the reward must be generated by the "
                                               "verifier at run time, not pre-created.",
@@ -429,7 +429,7 @@ def _reward_pre_created(name, root, p):
     df = read_text(p["Dockerfile"])
     if re.search(r"reward\.txt", df, re.I) and re.search(r"\b(COPY|ADD|RUN)\b", df, re.I):
         if re.search(r"(COPY|ADD)\s+[^\n]*reward\.txt|>\s*\S*reward\.txt", df, re.I):
-            out.append(finding(name, "anti_cheat", WARN, "reward-pre-created",
+            out.append(finding(name, "anti_cheat", FAIL, "reward-pre-created",
                                detail="environment/Dockerfile writes/copies a reward.txt into "
                                       "the image — the reward must not exist before verification.",
                                location="environment/Dockerfile",
@@ -457,7 +457,7 @@ def _verifier_helper_baked(name, root, p, agent_writable_fired):
     hits = sorted(set(hits))
     if not hits:
         return []
-    return [finding(name, "anti_cheat", WARN, "verifier-helper-in-environment",
+    return [finding(name, "anti_cheat", FAIL, "verifier-helper-in-environment",
                     detail=f"Verifier/grader-named helper(s) {hits} are baked under "
                            "environment/ (into the agent image) and referenced by the grading "
                            "harness — verifier logic should live under tests/ (verify-time "
@@ -487,7 +487,7 @@ def _conftest_plant_vulnerable(name, root, p):
     guarded = re.search(r"--noconftest|--confcutdir", ts)
     root_agent = not _USER_DROP.search(read_text(p["Dockerfile"]))
     if discovers and rc_gated and not guarded and root_agent:
-        return [finding(name, "anti_cheat", WARN, "conftest-plant-vulnerable",
+        return [finding(name, "anti_cheat", FAIL, "conftest-plant-vulnerable",
                         detail="verifier runs pytest with /app on the conftest-discovery path, "
                                "gates the reward on pytest's exit code, and the agent is root with "
                                "no --noconftest guard — a planted /app/conftest.py (skip-all "

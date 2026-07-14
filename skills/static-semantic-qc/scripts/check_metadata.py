@@ -274,8 +274,21 @@ def check_task(name, root):
                                location="task.toml [metadata]",
                                fix="Make the task harder, or replace it; re-benchmark avg@8 with "
                                    "Terminus-2 on Opus-4.8/GPT-5.4."))
+        if avg is not None and not (0 <= avg <= 1):
+            out.append(finding(name, "metadata", FAIL, "avg-at-8-out-of-range",
+                               detail=f"avg_at_8={avg} is outside [0, 1] — not a valid pass rate.",
+                               location="task.toml [metadata]",
+                               fix="Re-benchmark with Terminus-2 on GPT-5.4/Opus-4.8 and record avg@8."))
+        elif avg is not None and abs(avg * 8 - round(avg * 8)) > 1e-6:
+            # not a clean multiple of 1/8 (e.g. task run over 7 or 9 attempts) — snap to nearest k/8
+            snapped = round(avg * 8) / 8
+            out.append(finding(name, "metadata", WARN, "avg-at-8-not-eighth",
+                               detail=f"avg_at_8={avg} is not a multiple of 1/8 (likely run over "
+                                      f"a non-8 attempt count); round to the nearest eighth ({snapped}).",
+                               location="task.toml [metadata]",
+                               fix=f"Set avg_at_8 = {snapped} (nearest k/8), or re-benchmark over 8 attempts."))
         if avg is None:
-            out.append(finding(name, "metadata", WARN, "missing-avg-at-8",
+            out.append(finding(name, "metadata", FAIL, "missing-avg-at-8",
                                detail="metadata.avg_at_8 missing — Reflection requires a "
                                       "recorded average@8 from the difficulty benchmark.",
                                location="task.toml [metadata]",
@@ -326,20 +339,20 @@ def check_task(name, root):
                            detail=f"agent timeout_sec={ato} must be > 0.",
                            location="task.toml [agent]", fix="Set a positive timeout."))
     if vto and ato and ato < vto:
-        out.append(finding(name, "metadata", WARN, "agent-timeout-lt-verifier",
+        out.append(finding(name, "metadata", FAIL, "agent-timeout-lt-verifier",
                            detail=f"agent timeout ({ato}s) < verifier timeout ({vto}s).",
                            location="task.toml",
                            fix="agent timeout should be >= verifier timeout."))
     # Reflection [environment].build_timeout_sec
     if reflection:
         if bto is None:
-            out.append(finding(name, "metadata", WARN, "missing-build-timeout",
+            out.append(finding(name, "metadata", FAIL, "missing-build-timeout",
                                detail="[environment] build_timeout_sec missing — Reflection's "
                                       "schema requires it.",
                                location="task.toml [environment]",
                                fix="Add build_timeout_sec sized to a clean image build."))
         elif bto <= 0:
-            out.append(finding(name, "metadata", WARN, "nonpositive-build-timeout",
+            out.append(finding(name, "metadata", FAIL, "nonpositive-build-timeout",
                                detail=f"build_timeout_sec={bto} is a placeholder/zero — set a "
                                       "real budget for the image build.",
                                location="task.toml [environment]",
@@ -347,7 +360,7 @@ def check_task(name, root):
 
     # ---- resources ----
     if cpus is None and mem is None and gpus is None:
-        out.append(finding(name, "metadata", WARN, "no-env-resources",
+        out.append(finding(name, "metadata", FAIL, "no-env-resources",
                            detail="No environment resources (cpus/memory_mb/gpus) declared.",
                            location="task.toml [environment]",
                            fix="Declare at least cpus and memory_mb."))
@@ -355,20 +368,20 @@ def check_task(name, root):
     zero_res = [k for k, v in (("cpus", cpus), ("memory_mb", mem),
                                ("storage_mb", storage)) if v == 0]
     if zero_res:
-        out.append(finding(name, "metadata", WARN, "placeholder-zero-resource",
+        out.append(finding(name, "metadata", FAIL, "placeholder-zero-resource",
                            detail=f"resource field(s) {zero_res} are 0 — looks like the "
                                   "template default was never set.",
                            location="task.toml [environment]",
                            fix="Set real resource limits (cpus/memory_mb/storage_mb)."))
     # MAI infra enforces ~1 CPU / 4 GB; flag tasks that quietly need more
     if cpus is not None and cpus > 1:
-        out.append(finding(name, "metadata", WARN, "cpus-above-client-cap",
+        out.append(finding(name, "metadata", FAIL, "cpus-above-client-cap",
                            detail=f"cpus={cpus}: clients (e.g. MAI) enforce ~1 CPU; "
                                   "task may pass on Modal but fail under client caps.",
                            location="task.toml [environment]",
                            fix="Confirm the task runs within ~1 CPU / 4 GB, or flag the requirement."))
     if mem is not None and mem > 4096:
-        out.append(finding(name, "metadata", WARN, "memory-above-client-cap",
+        out.append(finding(name, "metadata", FAIL, "memory-above-client-cap",
                            detail=f"memory_mb={mem}: exceeds the common ~4 GB client cap.",
                            location="task.toml [environment]",
                            fix="Confirm the task runs within ~4 GB or flag the requirement."))
@@ -379,7 +392,7 @@ def check_task(name, root):
                 + read_text(p["test.sh"]) + "\n" + read_text(p["test_outputs.py"]))
         m = HEAVY_WORKLOAD.search(blob)
         if m:
-            out.append(finding(name, "metadata", WARN, "memory-vs-workload",
+            out.append(finding(name, "metadata", FAIL, "memory-vs-workload",
                                detail=f"task uses a heavy workload (`{m.group(1)}`) but "
                                       f"memory_mb={mem if mem is not None else 'unset'} "
                                       "(<=4096) — likely OOM (Spark/Neo4j/ES/JVM need 8-16 GB).",
@@ -397,7 +410,7 @@ def check_task(name, root):
         NEEDS_NET = re.compile(r"(https?://|\bdownload\b|\bfetch\b.{0,20}\b(url|http|remote)|"
                                r"hugging\s?face|from the internet|\bpip install\b.*\b(from|http))", re.I)
         if NEEDS_NET.search(instr):
-            out.append(finding(name, "metadata", WARN, "internet-flag-contradiction",
+            out.append(finding(name, "metadata", FAIL, "internet-flag-contradiction",
                                detail="allow_internet=false, but instruction.md tells the agent "
                                       "to download/fetch from the network — the task may be "
                                       "impossible to solve offline.",

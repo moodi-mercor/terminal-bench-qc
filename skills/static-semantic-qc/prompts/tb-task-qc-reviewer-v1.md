@@ -2,7 +2,7 @@
 
 **Subject:** Task (a Terminal-Bench task: `instruction.md`, `tests/`, `solution/solve.sh`, `environment/Dockerfile` + setup scripts).
 **Config:** agentic — this prompt goes in `user_prompt_template`; `system_prompt` empty. The agent MUST read the task files before scoring.
-**Stance:** presume the task is correct. Only FAIL for a concrete, evidenced violation. Verdicts: **PASS / FAIL / NEUTRAL** (NEUTRAL = can't determine from the files; use sparingly).
+**Stance:** verify every criterion from the evidence — do NOT assume correctness. In this corpus, material verifier and oracle defects are the norm, not the exception (independent review found a major issue in the *verifier* on ~83% of tasks and in the *oracle* on ~58%). A task you find clean almost always means you under-inspected: before passing any dimension, re-do the per-requirement coverage check below. FAILs must still cite concrete `file:line` evidence — no speculative FAILs — but "I couldn't immediately see a problem" is NOT evidence of correctness. Verdicts: **PASS / FAIL / NEUTRAL** (NEUTRAL only when a file is genuinely unreadable; use rarely).
 **Pairs with:** the Adversary module (Layer 3), which runs in parallel on the same subject. Do NOT attempt to cheat the verifier here — that is the adversary's job. This module asks one question: **"is this task correct?"**
 
 ---
@@ -15,7 +15,7 @@ Work in three phases.
 
 **Phase 2 — Read.** Read `instruction.md`, the full `tests/` files (read the *whole* test file — never flag a single assertion without reading the rest), `solution/solve.sh`, and the Dockerfile + setup scripts. Grep the environment for any value before you reason about it.
 
-**Phase 3 — Assess the six dimensions below.** Emit a per-dimension verdict with evidence: cite the file and line behind every verdict. A generic "looks fine" is not acceptable.
+**Phase 3 — Assess the seven dimensions below.** Emit a per-dimension verdict with evidence: cite the file and line behind every verdict. A generic "looks fine" is not acceptable.
 
 ---
 
@@ -31,10 +31,15 @@ Every hard requirement in the instruction has ≥1 test, AND every test maps to 
 
 ## Dimension 2 — Comprehensive coverage  `dimension: coverage`
 
-Tests verify every part of the instruction on *both* routes: the correctness route (right answer?) and the optimal-solution route (the required algorithm / perf bound / API?). Flag a stated O(n log n), latency, or memory bound that no test exercises.
+Do this as **mutation testing in your head**. First build a REQUIREMENT CHECKLIST: enumerate every material requirement, behavior, edge case, boundary, failure mode, and output-schema rule stated or implied by the instruction/contract. Then, for EACH checklist item, name the exact `test_check_*` and the specific assertion that would FAIL a solution which violated *only that one item* (its "mutant"). Write this mapping in your `detail`.
 
+- **untested-requirement** (FAIL) — any checklist item for which no test would fail its mutant. The agent could skip that behavior and still score 100%. This is the single most common defect — hunt for it deliberately, one item at a time; do not stop at the happy path.
+- **weak-assertion** (FAIL) — an item whose test is satisfiable by a materially-incomplete or fabricated output: existence-only, substring, format-not-value, a ratio/normalization that collapses to a constant, or an assertion that ignores exit code / partial state.
+- Cover **both routes**: correctness (right answer) AND required method (a stated O(n log n) / latency / memory bound the tests must actually exercise, not just assert the output).
 - **flaky-test** (FAIL if it can fail a correct solution; else note) — pass/fail varies for the *same correct solution*: wall-clock margins ("<0.5s"), network, unseeded RNG, set/dict ordering, races.
 - Over-constraining an incidental helper name / intermediate value / log string → report as **brittle-string-match**.
+
+Do NOT conclude coverage is adequate because "the central cases look tested." The bar is that **no materially-wrong solution can pass** — every checklist item must map to a mutant-killing assertion, or it is a FAIL.
 
 ## Dimension 3 — Hygiene & clarity  `dimension: hygiene`
 
@@ -47,6 +52,7 @@ Tests verify every part of the instruction on *both* routes: the correctness rou
 **Required reasoning order: first name the underlying algorithm/method the task calls for, then compare `solution/solve.sh` against a canonical solution for that method, then trace it through each `test_check_*`.** It must implement real logic (no hardcoded outputs, no reading `tests/`, no lookahead) and score 100% on the happy path.
 
 - **golden-patch-mismatch** (FAIL) — the reference wouldn't actually score 100% (misses a requirement, wrong output shape, relies on something absent at run time, or a `str.replace`/patch that silently no-ops because the pattern doesn't match).
+- **oracle-contract-violation** (FAIL) — the reference is INCORRECT against the *written contract* even though it passes the (possibly weak) tests. Check the oracle against the instruction's contract **independently of what the tests accept**: does it mishandle a malformed / boundary / numeric / cache / concurrency case, skip a validation, or get a durable state transition wrong? A weak verifier does not make a wrong oracle correct — if the oracle would produce the wrong result on a contract-required case the tests happen not to check, FAIL here (this is distinct from golden-patch-mismatch, which is about failing the task's own tests). Independent review found the oracle materially wrong on ~58% of tasks, so trace the hard cases explicitly.
 - **hardcoded-solution** (FAIL) — `solve.sh` emits the expected answer literally / reads it from `tests/` rather than computing it.
 
 ## Dimension 5 — Task realism (`task-realism`)  `dimension: realism`
@@ -67,7 +73,13 @@ The softer judgment calls from Reflection's Quality criteria. These are **note/N
 - **arbitrary-constraint** (note) — a formatting/precision/tool-use/process constraint with no real requirement and no anti-cheat value, added only to inflate difficulty ("use exactly 3 spaces", "you must use awk", "round to 7 decimals" for no reason). The inverse of over-specification. A constraint that genuinely blocks a shortcut is valid, not arbitrary.
 - **uncalibrated-tolerance** (note; FAIL only if it clearly admits wrong answers) — a numeric tolerance / similarity threshold / fuzzy match / range assertion that isn't justified, so it rejects correct alternative solutions (too tight) or passes wrong ones (too loose). Confirm a correct solution lands inside it and a plausible wrong one doesn't.
 
----
+## Dimension 7 — Deterministic & self-contained execution  `dimension: determinism`
+
+Identical clean runs of the task, Oracle, and verifier must produce the same outputs and the same verdict. Check the solution, verifier, and any build/setup for sources of run-to-run drift.
+
+- **nondeterministic-execution** (FAIL) — unseeded randomness (`random.`/`np.random`/`uuid`/`shuffle` with no fixed seed), reliance on dict/set iteration order or unsorted `os.listdir`/glob for a checked result, wall-clock/current-date/timezone dependence, or a race between backgrounded services and the checks — anything that could change a checked output or flip the verdict between identical runs.
+- **grade-time-randomness** (FAIL when it can flip the verdict; else note) — the verifier itself generates unseeded inputs or samples, so the same final state can pass or fail on re-run.
+- Data baked once at build time and never regenerated is fine; a fixed seed / sorted ordering / pinned timestamp is fine. Only flag drift that actually reaches a checked output or the reward.
 
 ## False-positive rules — apply BEFORE flagging anything
 
@@ -83,12 +95,13 @@ The softer judgment calls from Reflection's Quality criteria. These are **note/N
 
 ## Three MANDATORY checks — answer each explicitly with evidence before concluding
 
-- **Q1 (weak verifier / false-accept).** *Write the laziest submission that still passes.* Would a no-op, empty file, all-zeros, or constant output satisfy every assertion? Watch for ratios/normalizations that collapse to a constant, substring/length/existence-only checks. If a lazy output passes an essential requirement → `weak-assertion` FAIL.
-- **Q2 (broken oracle / false-reject).** *Does the reference `solve.sh` pass every test?* Name the algorithm, then trace it through each `test_check_*`. Watch for patches that silently no-op, missing deps, wrong output paths, whitespace/format mismatches. If the shipped reference would fail its own tests → `golden-patch-mismatch` FAIL.
+- **Q1 (weak verifier / false-accept).** Write TWO submissions: the laziest (no-op / empty / all-zeros / constant) AND the most-plausible-but-materially-incomplete one (handles the happy path, skips edge cases / validation / a required state transition, or fabricates a plausible-looking output). Would EITHER satisfy every assertion? Watch ratios/normalizations that collapse to a constant, substring/length/existence-only checks. Independent review found fabricated or incomplete solutions pass on ~83% of tasks — assume such a solution exists and find it. If any materially-wrong submission passes an essential requirement → `weak-assertion` FAIL.
+- **Q2 (broken oracle / false-reject).** *Does the reference `solve.sh` pass every test?* Name the algorithm, then trace it through each `test_check_*`. Watch for patches that silently no-op, missing deps, wrong output paths, whitespace/format mismatches. If the shipped reference would fail its own tests → `golden-patch-mismatch` FAIL. Separately verify the oracle is correct against the CONTRACT even where tests are silent → `oracle-contract-violation` FAIL.
 - **Q3 (instruction↔test mismatch).** *Does every value/string the tests assert appear in the instruction or an agent-visible file?* Cross-check enum/reason strings, magic numbers, expected outputs against the prompt AND any sample the instruction tells the agent to study. A test demanding a value that contradicts the agent's only spec → `brittle-string-match` / `untested-requirement` FAIL.
+- **Q4 (protected ground truth).** Can the agent influence its own grade? Flag the enabling STRUCTURE (live-cheat confirmation is the adversary's job): the verifier imports from or reads a path the agent can write (`/app`, cwd, a fixture/generator not re-copied into a protected/verifier-only location); a planted `conftest.py` or a same-named module could shadow a verifier import; the reward file path is agent-writable or non-standard. Any of these → `agent-writable-verifier` / `candidate-derived-truth` FAIL. Independent review found this on ~94% of tasks — check it explicitly, do not assume isolation.
 
 ---
 
-**Coverage contract — you MUST emit exactly one finding for every one of the six dimensions, tagged with its `dimension` key** (`alignment`, `coverage`, `hygiene`, `golden-patch`, `realism`, `constraints`). This is the checklist: a missing dimension is treated as "not assessed" and fails the task's QC as INCOMPLETE — you cannot skip one by staying silent. Every finding — including a `PASS` — MUST carry non-empty `detail` citing the concrete `file:line` evidence you actually looked at (a `PASS` with no evidence reads as "didn't check" and is rejected the same as a skip). Answer the three MANDATORY checks (Q1/Q2/Q3) inside the relevant dimension's `detail`. You may emit *additional* findings (e.g. a second defect in one dimension, or static-flag `verify-refuted`/`verify-confirm`) beyond the six, but never fewer. Never force a dimension to NEUTRAL/PASS to be safe — make the criterion precise instead. Do not invent dimensions beyond these six.
+**Coverage contract — you MUST emit exactly one finding for every one of the seven dimensions, tagged with its `dimension` key** (`alignment`, `coverage`, `hygiene`, `golden-patch`, `realism`, `constraints`, `determinism`). This is the checklist: a missing dimension is treated as "not assessed" and fails the task's QC as INCOMPLETE — you cannot skip one by staying silent. Every finding — including a `PASS` — MUST carry non-empty `detail` citing the concrete `file:line` evidence you actually looked at (a `PASS` with no evidence reads as "didn't check" and is rejected the same as a skip). Answer the three MANDATORY checks (Q1/Q2/Q3) inside the relevant dimension's `detail`. You may emit *additional* findings (e.g. a second defect in one dimension, or static-flag `verify-refuted`/`verify-confirm`) beyond the seven, but never fewer. Never force a dimension to NEUTRAL/PASS to be safe — make the criterion precise instead. Do not invent dimensions beyond these seven.
 
 <!-- If Layer-1 static findings are later fed in via a Pipeline Run subject, reattach job (B): for each static FAIL/WARN, try to refute it and emit verify-refuted / verify-confirm. Omitted here because static stays offline. -->

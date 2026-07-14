@@ -39,7 +39,7 @@ def gate_one(app, repo, task, timeout):
             "bash /solution/solve.sh >/tmp/solve.log 2>&1; SRC=$?; "
             "bash /tests/test.sh >/tmp/oracle.log 2>&1; ORC=$?; "
             "echo \"NRC=$NRC SRC=$SRC ORC=$ORC\"; "
-            "echo '--- oracle tail ---'; tail -c 600 /tmp/oracle.log"
+            "echo '--- oracle tail ---'; tail -c 600 /tmp/oracle.log | LC_ALL=C tr -c '\11\12\15\40-\176' '?'"
         )
         p = sb.exec("bash", "-lc", script)
         out = p.stdout.read()

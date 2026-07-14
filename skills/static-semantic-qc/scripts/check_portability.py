@@ -40,7 +40,7 @@ import glob
 import os
 import re
 
-from common import (WARN, PASS, finding, emit, read_text, discover_tasks,
+from common import (FAIL, WARN, PASS, finding, emit, read_text, discover_tasks,
                     task_paths, load_toml, is_reflection_schema)
 
 SERVER_MARK = re.compile(r"\b(uvicorn|gunicorn|fastapi|flask|grpc\.server|"
@@ -100,7 +100,7 @@ def _check_solve(root, name):
 
     # python shebang on a bash-run script
     if lines and re.match(r"#!.*python", lines[0]):
-        out.append(finding(name, "solution", WARN, "mixed-bash-python-solve",
+        out.append(finding(name, "solution", FAIL, "mixed-bash-python-solve",
                            detail="solve.sh has a python shebang but the harness runs it "
                                   "with `bash` — the implementation won't execute.",
                            location="solution/solve.sh:1",
@@ -113,7 +113,7 @@ def _check_solve(root, name):
         for i, l in enumerate(lines, 1):
             s = l.strip()
             if s.endswith("&") and not s.endswith("&&") and ">" not in s:
-                out.append(finding(name, "solution", WARN, "backgrounded-daemon-no-redirect",
+                out.append(finding(name, "solution", FAIL, "backgrounded-daemon-no-redirect",
                                    detail=f"line {i} backgrounds a process (`&`) without "
                                           "redirecting stdout — it can hold the runner's pipe "
                                           "open and hang the run.",
@@ -128,7 +128,7 @@ def _check_solve(root, name):
         has_venv = re.search(r"(python3?\s+-m\s+venv|virtualenv|/activate|conda\s+activate|"
                              r"\buv\s+pip)", text)
         if not has_flag and not has_venv:
-            out.append(finding(name, "solution", WARN, "pip-no-break-system-packages",
+            out.append(finding(name, "solution", FAIL, "pip-no-break-system-packages",
                                detail="solve.sh runs `pip install` without "
                                       "--break-system-packages or a venv — aborts under PEP 668 "
                                       "on Ubuntu 24.04 (`set -e` then skips the rest).",
@@ -140,7 +140,7 @@ def _check_solve(root, name):
     for i, l in enumerate(lines, 1):
         if re.search(r"\bredis-server\b", l) and "--daemonize" not in l \
                 and not l.strip().endswith("&") and "nohup" not in l:
-            out.append(finding(name, "solution", WARN, "redis-no-daemonize",
+            out.append(finding(name, "solution", FAIL, "redis-no-daemonize",
                                detail=f"line {i} starts redis-server in the foreground — it "
                                       "blocks the rest of solve.sh.",
                                location=f"solution/solve.sh:{i}",
@@ -151,7 +151,7 @@ def _check_solve(root, name):
     # broad pkill
     for i, l in enumerate(lines, 1):
         if re.search(r"\bpkill\s+-f\b", l):
-            out.append(finding(name, "solution", WARN, "broad-pkill",
+            out.append(finding(name, "solution", FAIL, "broad-pkill",
                                detail=f"line {i} uses `pkill -f` — the pattern can match the "
                                       "sandbox supervising launcher and kill the run.",
                                location=f"solution/solve.sh:{i}",
@@ -171,7 +171,7 @@ def _check_solve(root, name):
                          re.I)
     edit_line = next((i for i, l in enumerate(lines) if EDIT.search(l) and CFG.search(l)), None)
     if edit_line is not None and not RESTART.search("\n".join(lines[edit_line:])):
-        out.append(finding(name, "solution", WARN, "config-edit-no-restart",
+        out.append(finding(name, "solution", FAIL, "config-edit-no-restart",
                            detail=f"line {edit_line+1} edits a service config but solve.sh never "
                                   "restarts/reloads the daemon afterward — the running daemon keeps "
                                   "the old config and the test sees stale state.",
@@ -190,7 +190,7 @@ def _check_solve(root, name):
                 if bl >= BIG_HEREDOC or (SRC_EXT.search(dest) and bl >= SRC_HEREDOC)), None)
     if big:
         ln, bl, dest = big
-        out.append(finding(name, "solution", WARN, "solve-embedded-heredoc",
+        out.append(finding(name, "solution", FAIL, "solve-embedded-heredoc",
                            detail=f"solve.sh embeds a {bl}-line heredoc"
                                   f"{(' writing ' + dest) if dest else ''} (line {ln}) — a source "
                                   "file inlined in solve.sh. Reflection wants long scripts / large "
@@ -198,7 +198,7 @@ def _check_solve(root, name):
                            location=f"solution/solve.sh:{ln}",
                            fix="Move the body to a file under solution/ and COPY/run it from solve.sh."))
     elif reflection and len(lines) >= LONG_SOLVE:
-        out.append(finding(name, "solution", WARN, "solve-too-long",
+        out.append(finding(name, "solution", FAIL, "solve-too-long",
                            detail=f"solve.sh is {len(lines)} lines — complex helper logic that "
                                   "should be decomposed into separate files rather than living "
                                   "entirely in solve.sh.",
@@ -209,7 +209,7 @@ def _check_solve(root, name):
     # server defined but never started
     sol = _solution_text(root)
     if SERVER_MARK.search(sol) and not LAUNCH_MARK.search(text):
-        out.append(finding(name, "solution", WARN, "server-defined-not-started",
+        out.append(finding(name, "solution", FAIL, "server-defined-not-started",
                            detail="solve.sh writes a server/app (uvicorn/flask/grpc/...) but "
                                   "has no command that starts it — tests hitting the port get "
                                   "connection-refused.",
@@ -235,7 +235,7 @@ def _check_tests_and_cmd(root, name):
     if NET_CALL.search(ttext) and not re.search(r"\btimeout\s*=", ttext) \
             and not re.search(r"\.settimeout\s*\(", ttext):
         m = NET_CALL.search(ttext)
-        out.append(finding(name, "tests", WARN, "verifier-unbounded-call",
+        out.append(finding(name, "tests", FAIL, "verifier-unbounded-call",
                            detail=f"the verifier makes a network/service call (`{m.group(0)[:40]}`) "
                                   "with no timeout — it can block past the configured "
                                   "verifier timeout and hang the run.",
@@ -243,7 +243,7 @@ def _check_tests_and_cmd(root, name):
                            fix="Pass a timeout (e.g. requests.get(..., timeout=10)) / "
                                "sock.settimeout(...) to every service call in the verifier."))
     if re.search(r"\b(systemctl|journalctl)\b|/run/systemd", ttext):
-        out.append(finding(name, "tests", WARN, "systemd-assumption",
+        out.append(finding(name, "tests", FAIL, "systemd-assumption",
                            detail="tests use systemctl/journalctl — absent in most non-Docker "
                                   "sandboxes, so the check can't run there.",
                            location="tests/",
@@ -261,7 +261,7 @@ def _check_tests_and_cmd(root, name):
             sol = read_text(task_paths(root)["solve.sh"])
             key = daemonish.group(1).lower()
             if key not in sol.lower():
-                out.append(finding(name, "tests", WARN, "cmd-entrypoint-reliance",
+                out.append(finding(name, "tests", FAIL, "cmd-entrypoint-reliance",
                                    detail=f"Dockerfile {m.group(1)} starts `{key}`, but solve.sh "
                                           "doesn't — non-Docker runtimes don't run the image CMD, "
                                           "so the daemon never comes up.",

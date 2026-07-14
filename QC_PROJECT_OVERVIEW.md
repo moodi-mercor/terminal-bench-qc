@@ -1,9 +1,25 @@
 # Terminal Bench — QC Project Overview
 
-**Updated:** 2026-06-28 · **Owner:** mahmoodmapara@mercor.com
+**Updated:** 2026-06-29 · **Owner:** mahmoodmapara@mercor.com
 **Goal:** QC all **13,433** Canonical tasks for reward-hacks + brittle/broken verifiers, label in RL Studio, make it continuous.
 
-## Status
+## FINAL consolidated buckets (13,433)
+
+| # | Bucket | Count | % | Status |
+|---|---|---|---|---|
+| 1 | Broken oracle (solution fails own test) | 2,510 | 18.7% | confirmed |
+| 2 | Reward-hack / answer-leak | 775 | 5.8% | ✅ labeled (P0/P1) |
+| 3 | Brittle verifier (too strict) | 653 | 4.9% | ✅ labeled (P1) |
+| 4 | Semantic defect (spec↔test) | 776 | 5.8% | found, unlabeled |
+| 5 | `<unknown>` anomaly (named-pass, reward 0) | 1,105 | 8.2% | investigate |
+| 6 | **Healthy + HARD (Reflection gold)** | 2,787 | 20.7% | deliverable pool |
+| 7 | Healthy + easy/moderate | 4,014 | 29.9% | too easy |
+| 7c | Healthy, difficulty unknown | 811 | 6.0% | needs eval |
+
+**Defective (1–4): 4,714 (35%)** · Investigate: 1,105 · Reflection-grade: 2,787. Detail: `_local/final_buckets.csv`.
+Audits run: static (all), behavioral (2,489 broken), reviewer (896), trajectory-FN (930), gameable+leak buckets 5+6 (775), brittle all-fail (105 genuine; 1,105 `<unknown>` set aside). LLM-judge lesson: validate against ground truth — the all-fail "broken" + early brittle numbers were artifacts; corrected, never written to RLS.
+
+## Status (per-layer)
 
 "Scanned" = ran the layer over the task. "Passed" = clean, no flag. (RLS-exact, world `world_2c7cdb…`.)
 

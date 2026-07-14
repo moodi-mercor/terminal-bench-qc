@@ -20,3 +20,11 @@ skills/trajectory-audit/audit_out*/
 # local batch run artifacts and findings dumps (not skills)
 jobs/
 findings_*.json
+
+# local python venv and scratch/working dirs (never commit)
+modalenv/
+scratchpad/
+
+# editor/backup cruft
+*.bak
+*.bak[0-9]

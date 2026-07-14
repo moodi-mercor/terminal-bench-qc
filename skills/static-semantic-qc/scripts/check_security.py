@@ -25,7 +25,7 @@ import argparse
 import os
 import re
 
-from common import WARN, PASS, finding, emit, read_text, discover_tasks, task_paths
+from common import FAIL, WARN, PASS, finding, emit, read_text, discover_tasks, task_paths
 
 PROMPT_INJECTION = re.compile(
     r"(ignore\s+(all\s+|any\s+|the\s+)?(previous|prior|above|earlier)\s+instructions|"
@@ -86,7 +86,7 @@ def check_task(name, root):
 
         m = PROMPT_INJECTION.search(text)
         if m:
-            out.append(finding(name, "anti_cheat", WARN, "prompt-injection",
+            out.append(finding(name, "anti_cheat", FAIL, "prompt-injection",
                                detail=f"{rel} contains injection-like text "
                                       f"(`{m.group(0).strip()[:60]}`) that could steer the "
                                       "agent away from the task or leak the answer.",
@@ -98,7 +98,7 @@ def check_task(name, root):
         present = sorted({c for c in HIDDEN_CHARS if c in text})
         if present:
             names = ", ".join(HIDDEN_CHARS[c] for c in present)
-            out.append(finding(name, "anti_cheat", WARN, "hidden-unicode",
+            out.append(finding(name, "anti_cheat", FAIL, "hidden-unicode",
                                detail=f"{rel} contains hidden/bidi Unicode ({names}) — can hide "
                                       "or reorder text from a human reviewer.",
                                location=rel,
@@ -108,7 +108,7 @@ def check_task(name, root):
         if not hit and rel != "instruction.md" and LONG_B64.search(text):
             hit = "long base64-encoded blob"
         if hit:
-            out.append(finding(name, "anti_cheat", WARN, "obfuscated-payload",
+            out.append(finding(name, "anti_cheat", FAIL, "obfuscated-payload",
                                detail=f"{rel} contains {hit} — obfuscated/dynamic execution is "
                                       "unauditable and a common cheat/host-escape vector.",
                                location=rel,

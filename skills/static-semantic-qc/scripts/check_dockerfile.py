@@ -38,7 +38,7 @@ import argparse
 import os
 import re
 
-from common import (WARN, PASS, finding, emit, read_text, discover_tasks,
+from common import (FAIL, WARN, PASS, finding, emit, read_text, discover_tasks,
                     task_paths, load_toml, is_reflection_schema)
 
 FROM_RE = re.compile(r"^\s*FROM\s+(?:--platform=\S+\s+)?(\S+)", re.I | re.M)
@@ -150,7 +150,7 @@ def check_task(name, root):
 
     unpinned = [r for r in refs if _unpinned_base(r)]
     if unpinned:
-        out.append(finding(name, "dockerfile", WARN, "unpinned-base-image",
+        out.append(finding(name, "dockerfile", FAIL, "unpinned-base-image",
                            detail=f"base image(s) {unpinned} use :latest or no tag — the "
                                   "build drifts as upstream moves.",
                            location=loc,
@@ -163,7 +163,7 @@ def check_task(name, root):
                       if not r.startswith("$") and r.lower() != "scratch"
                       and "@sha256" not in r and not _unpinned_base(r)]
         if undigested:
-            out.append(finding(name, "dockerfile", WARN, "base-image-not-digest-pinned",
+            out.append(finding(name, "dockerfile", FAIL, "base-image-not-digest-pinned",
                                detail=f"base image(s) {undigested} are tagged but not pinned by "
                                       "@sha256 digest — Reflection requires digest pinning.",
                                location=loc,
@@ -173,7 +173,7 @@ def check_task(name, root):
                         if not r.startswith("$") and r.lower() != "scratch"
                         and not (APPROVED_REGISTRY in r and _image_name(r) in APPROVED_IMAGES)]
         if not_approved:
-            out.append(finding(name, "dockerfile", WARN, "base-image-not-approved",
+            out.append(finding(name, "dockerfile", FAIL, "base-image-not-approved",
                                detail=f"base image(s) {not_approved} are not in the pre-approved "
                                       "set (python/debian/ubuntu/node/rust/go/gcc/ruby/maven/"
                                       "eclipse-temurin on public.ecr.aws/docker/library).",
@@ -183,19 +183,19 @@ def check_task(name, root):
 
     apt_runs = [b for b in _run_blocks(text) if APT_INSTALL.search(b)]
     if apt_runs and not APT_UPDATE.search(text):
-        out.append(finding(name, "dockerfile", WARN, "apt-no-update",
+        out.append(finding(name, "dockerfile", FAIL, "apt-no-update",
                            detail="`apt-get install` with no `apt-get update` in the "
                                   "Dockerfile — installs can fail on a stale cache.",
                            location=loc,
                            fix="Run `apt-get update` in the same RUN before install."))
     if len(apt_runs) > 1:
-        out.append(finding(name, "dockerfile", WARN, "apt-not-consolidated",
+        out.append(finding(name, "dockerfile", FAIL, "apt-not-consolidated",
                            detail=f"apt installs are split across {len(apt_runs)} RUN layers — "
                                   "each is a wasted layer and a fresh metadata refresh.",
                            location=loc,
                            fix="Merge the apt-get installs into a single RUN block."))
     if APT_UPGRADE.search(text):
-        out.append(finding(name, "dockerfile", WARN, "apt-get-upgrade",
+        out.append(finding(name, "dockerfile", FAIL, "apt-get-upgrade",
                            detail="`apt-get upgrade` silently pulls whatever the mirror has "
                                   "today — it defeats the base-image digest pinning.",
                            location=loc,
@@ -204,7 +204,7 @@ def check_task(name, root):
     pip = _unpinned_pip(text)
     if pip:
         shown = pip[:6]
-        out.append(finding(name, "dockerfile", WARN, "unpinned-pip",
+        out.append(finding(name, "dockerfile", FAIL, "unpinned-pip",
                            detail=f"pip install without a version pin: {shown}"
                                   f"{' …' if len(pip) > 6 else ''} — non-reproducible.",
                            location=loc,
@@ -212,14 +212,14 @@ def check_task(name, root):
 
     url = ADD_URL.search(text)
     if url:
-        out.append(finding(name, "dockerfile", WARN, "add-remote-url",
+        out.append(finding(name, "dockerfile", FAIL, "add-remote-url",
                            detail=f"`ADD {url.group(1)}` fetches over the network at build "
                                   "time — non-reproducible and a supply-chain risk.",
                            location=loc,
                            fix="Vendor the artifact, or download+verify a checksum in a RUN."))
 
     if CURL_PIPE.search(text):
-        out.append(finding(name, "dockerfile", WARN, "curl-pipe-sh",
+        out.append(finding(name, "dockerfile", FAIL, "curl-pipe-sh",
                            detail="curl/wget piped into sh/bash — runs an unpinned remote "
                                   "script at build; not reproducible or auditable.",
                            location=loc,
@@ -228,7 +228,7 @@ def check_task(name, root):
     # compiled artifact + single stage => the build toolchain/cache ships to runtime
     if BUILD_CMD.search(text) and len(refs) <= 1:
         m = BUILD_CMD.search(text)
-        out.append(finding(name, "dockerfile", WARN, "missing-multistage-build",
+        out.append(finding(name, "dockerfile", FAIL, "missing-multistage-build",
                            detail=f"Dockerfile runs `{m.group(1)}` but has a single stage — "
                                   "the toolchain and build cache survive into the runtime image.",
                            location=loc,
@@ -236,14 +236,14 @@ def check_task(name, root):
                                "the artifact into the runtime stage (unless it's needed at runtime)."))
 
     if BROAD_CHMOD.search(text):
-        out.append(finding(name, "dockerfile", WARN, "broad-chmod",
+        out.append(finding(name, "dockerfile", FAIL, "broad-chmod",
                            detail="`chmod -R` rewrites the mode metadata of every file it "
                                   "touches and inflates the layer.",
                            location=loc,
                            fix="chmod only the specific files that need a mode change."))
 
     if HEREDOC_FILE.search(text):
-        out.append(finding(name, "dockerfile", WARN, "dockerfile-heredoc-source",
+        out.append(finding(name, "dockerfile", FAIL, "dockerfile-heredoc-source",
                            detail="source/data embedded via a heredoc (`RUN cat > f <<EOF`) — "
                                   "un-lintable, hard to diff, and impossible to test outside "
                                   "the container.",
@@ -252,7 +252,7 @@ def check_task(name, root):
 
     for m in COPY_ADD.finditer(text):
         if ARCHIVE_EXT.search(m.group(1)):
-            out.append(finding(name, "dockerfile", WARN, "archive-fixture-not-extracted",
+            out.append(finding(name, "dockerfile", FAIL, "archive-fixture-not-extracted",
                                detail="a .tar.gz/.zip fixture is COPYed in as an opaque archive "
                                       "— individual files don't appear as layer entries.",
                                location=loc,
@@ -264,7 +264,7 @@ def check_task(name, root):
     # with `sleep infinity`), so a task that relies on ENTRYPOINT to bring up a
     # service silently fails there. Use CMD only / start services in solve.sh.
     if re.search(r"^\s*ENTRYPOINT\b", text, re.M):
-        out.append(finding(name, "dockerfile", WARN, "dockerfile-entrypoint",
+        out.append(finding(name, "dockerfile", FAIL, "dockerfile-entrypoint",
                            detail="Dockerfile sets ENTRYPOINT — client infra (e.g. MAI) "
                                   "overrides startup with `sleep infinity`, so anything "
                                   "ENTRYPOINT launches never comes up.",
@@ -274,7 +274,7 @@ def check_task(name, root):
     # test framework baked into the AGENT image (TB rubric: test deps belong in
     # the verifier / run-tests.sh, not the agent's build).
     if re.search(r"(?:pip3?|uv\s+pip)\s+install\b[^\n]*\b(pytest|unittest2|nose2?)\b", text, re.I):
-        out.append(finding(name, "dockerfile", WARN, "test-deps-in-image",
+        out.append(finding(name, "dockerfile", FAIL, "test-deps-in-image",
                            detail="the agent image installs a test framework (pytest/nose) — "
                                   "test-only deps should be installed by the verifier "
                                   "(tests/test.sh), not baked into the agent's image.",
@@ -283,7 +283,7 @@ def check_task(name, root):
 
     # a non-trivial source tree should ship a .dockerignore to scope COPY narrowly
     if "COPY" in text.upper() and _nontrivial_env(root) and not _has_dockerignore(root):
-        out.append(finding(name, "dockerfile", WARN, "missing-dockerignore",
+        out.append(finding(name, "dockerfile", FAIL, "missing-dockerignore",
                            detail="non-trivial environment/ tree with no .dockerignore — "
                                   "broad COPYs risk pulling in .git, caches, or unused assets.",
                            location="environment/",

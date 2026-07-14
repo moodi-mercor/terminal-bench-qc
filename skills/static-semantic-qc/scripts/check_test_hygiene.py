@@ -31,7 +31,8 @@ base64 wrappers and on bash builtins with a clean native equivalent.
 
 Emits (area="tests"): `native-tests` (PASS) when clean, else one or more of
 `shell-wrapped-python`, `base64-wrapped-command`, `bash-op-doable-natively`,
-`fragmented-test-helpers` (WARN — a structuring defect, not a correctness FAIL).
+`fragmented-test-helpers`. All FAIL — Reflection requires self-contained native-Python
+tests with no shell-outs, no encoded content, and no delegation to other verifier files.
 
 Usage:
     python check_test_hygiene.py <tasks-dir> [--out findings_test_hygiene.json]
@@ -45,7 +46,7 @@ import sys
 sys.path.insert(0, os.path.normpath(os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "shared")))
 
-from common import WARN, PASS, finding, emit, read_text, discover_tasks, task_paths
+from common import WARN, FAIL, PASS, finding, emit, read_text, discover_tasks, task_paths
 
 # a subprocess string that wraps Python to do work doable natively
 PY_C = re.compile(r"python3?\s+-c\b")
@@ -133,7 +134,7 @@ def check_task(name, root):
             pass
     if b64_cmds:
         findings.append(finding(
-            name, "tests", WARN, "base64-wrapped-command",
+            name, "tests", FAIL, "base64-wrapped-command",
             detail=f"{len(b64_cmds)} base64-encoded command(s) fed to a shell runner — "
                    "opaque and unnecessary; decode and do the work natively in Python.",
             location="tests/test_outputs.py",
@@ -155,7 +156,7 @@ def check_task(name, root):
                if (PY_C.search(v) or PY_HEREDOC.search(v)) and not _justified(sp)]
     if py_hits or any(PY_C.search(s) for s in b64_cmds):
         findings.append(finding(
-            name, "tests", WARN, "shell-wrapped-python",
+            name, "tests", FAIL, "shell-wrapped-python",
             detail="test_outputs.py shells out to run Python (`python3 -c` / heredoc) "
                    "for work that can be done natively — e.g. loading JSON, hashing, or "
                    "reading a path. Running Python from Python to load a file is the smell "
@@ -167,7 +168,7 @@ def check_task(name, root):
     builtin_hits = sorted({m.group(1).split()[0] for s in haystacks for m in [NATIVE_BUILTINS.search(s)] if m})
     if builtin_hits:
         findings.append(finding(
-            name, "tests", WARN, "bash-op-doable-natively",
+            name, "tests", FAIL, "bash-op-doable-natively",
             detail=f"subprocess calls use shell builtins with a native equivalent: "
                    f"{', '.join(builtin_hits)}. cat/test/diff/cmp/sha256sum/grep/wc → "
                    "open()/os.path/hashlib/re/bytes-compare.",
@@ -182,7 +183,7 @@ def check_task(name, root):
                       or re.search(rf"(?<![\w.]){re.escape(os.path.splitext(b)[0])}\b", src)]
         flagged = referenced or bases
         findings.append(finding(
-            name, "tests", WARN, "fragmented-test-helpers",
+            name, "tests", FAIL, "fragmented-test-helpers",
             detail=f"test logic split across {len(flagged)} helper file(s) under tests/: "
                    f"{', '.join(sorted(flagged)[:6])}. Keep checks in test_outputs.py so "
                    "verification is self-contained on both sides. (tests/.truth/ is exempt.)",
@@ -190,6 +191,106 @@ def check_task(name, root):
             fix="Fold each helper's logic into tests/test_outputs.py and delete the file; "
                 "update tests/test.sh if it referenced it. Import a tests/.truth/ oracle "
                 "in-process rather than duplicating it."))
+
+    # 3. delegation to / dangling references into tests/.truth/  (deterministic)
+    #    client: test_outputs.py must be self-contained — calling a .truth/*.py verifier
+    #    is delegation; referencing a .truth path that doesn't exist is a broken verifier.
+    ts = read_text(p["test.sh"]) or ""
+    combined = src + "\n" + ts
+    truth_dir = os.path.join(p["tests"], ".truth")
+    truth_toks = set(re.findall(r'(?:/tests/)?\.truth/[\w./\-]+', combined))
+    invokes_truth_py = (
+        re.search(r'(subprocess\.\w+|_run|_exec|_exec_check|check_output|Popen|os\.system|run)\s*\([^\n]*\.truth/[\w./\-]+\.py', combined)
+        or re.search(r'python3?\s+[^\n|]*\.truth/[\w./\-]+\.py', combined)
+        or re.search(r'^\s*(from|import)\s+[^\n]*\btruth\b', src, re.M))
+    if invokes_truth_py:
+        findings.append(finding(
+            name, "tests", FAIL, "delegates-to-truth-verifier",
+            detail="test_outputs.py / test.sh delegates verification to a tests/.truth/*.py "
+                   "verifier (subprocess or import). Reflection requires the test script to "
+                   "contain all testing code, not call additional verifier scripts.",
+            location="tests/",
+            fix="Inline the .truth verifier's checking logic into test_outputs.py. Keep only "
+                "read-only ground-truth DATA fixtures under tests/.truth/, never verifier code."))
+    dangling = []
+    _fileext = re.compile(r'\.(py|json|jsonl|txt|csv|tsv|sh|bin|dat|pkl|npy|npz|toml|ya?ml|md|db|sqlite|gz|tar|zip|so|h5|parquet)$', re.I)
+    for tok in truth_toks:
+        rel = tok.split(".truth/", 1)[1].rstrip('.,;:)"\'')
+        disk = os.path.join(truth_dir, rel) if rel else truth_dir
+        if os.path.exists(disk):
+            continue
+        # a concrete file reference that is missing is dangling; a bare directory
+        # reference is dangling only when its parent is also absent (avoids FP on
+        # dynamically-built subpaths).
+        if _fileext.search(rel or "") or not os.path.exists(os.path.dirname(disk)):
+            dangling.append(tok)
+    if dangling:
+        findings.append(finding(
+            name, "tests", FAIL, "dangling-truth-reference",
+            detail=f"test references tests/.truth/ path(s) that do not exist: "
+                   f"{sorted(set(dangling))[:4]} — the verifier points at fixtures/verifiers "
+                   "that were never shipped, so it cannot grade correctly.",
+            location="tests/",
+            fix="Ship the referenced .truth files, or remove the dead references and inline "
+                "the ground truth the verifier needs."))
+
+    # 4. generic DB bootstrap boilerplate (deterministic) — client flagged templated
+    #    test.sh that boots >=3 of postgres/mysql/redis/mongo the task never uses.
+    DBS = {"postgresql": r"pg_ctlcluster|pg_isready|pg_ctl|postgres",
+           "mysql": r"mysqld|mysqladmin|\bmysql\b",
+           "redis": r"redis-server|redis-cli",
+           "mongodb": r"mongod|mongosh|mongo\b"}
+    booted = [db for db, pat in DBS.items() if re.search(pat, ts)]
+    if len(booted) >= 3:
+        usage = ((read_text(p["solve.sh"]) or "") + "\n" + src + "\n"
+                 + (read_text(p["instruction.md"]) or ""))
+        unused = [db for db in booted if not re.search(DBS[db], usage)]
+        if len(unused) >= 2:
+            findings.append(finding(
+                name, "tests", FAIL, "generic-bootstrap-blocks",
+                detail=f"test.sh boots {len(booted)} databases ({', '.join(booted)}) but "
+                       f"{len(unused)} are never used by the task ({', '.join(unused)}) — "
+                       "templated bootstrap boilerplate with no cleanup.",
+                location="tests/test.sh",
+                fix="Delete the bootstrap block(s) for databases the task does not use; keep "
+                    "only services the verifier or solution actually needs."))
+
+    # 5. no subjective grading / LLM-as-judge in the verifier (spec: "Verifiable" §68,
+    #    "No subjective grading" §170). Flag an LLM API call inside the verifier.
+    LLMJUDGE = re.compile(r"\b(openai|anthropic|litellm|ollama|google\.generativeai|"
+                          r"cohere|replicate|together)\b|chat\.completions|messages\.create|"
+                          r"ChatCompletion|\bLLM\b|as[- ]?a[- ]?judge|api\.openai\.com|"
+                          r"api\.anthropic\.com|generativelanguage\.googleapis", re.I)
+    if LLMJUDGE.search(src):
+        findings.append(finding(
+            name, "tests", FAIL, "llm-judge-in-verifier",
+            detail="the verifier appears to call an LLM / subjective grader. Reflection requires "
+                   "deterministic, programmatic grading — no LLM-as-a-judge or human-preference scoring.",
+            location="tests/test_outputs.py",
+            fix="Replace the LLM/subjective check with a deterministic programmatic assertion."))
+
+    # 6. deterministic tests — unseeded randomness / wall-clock in the verifier
+    #    (spec §154 deterministic tests, §89 no stale/time-dependent data).
+    RNG = re.compile(r"\brandom\.(random|randint|choice|shuffle|uniform|sample|randrange)\s*\(|"
+                     r"np\.random\.|numpy\.random\.|secrets\.(token|choice|randbelow)|os\.urandom\s*\(")
+    seeded = re.search(r"random\.seed\s*\(|np\.random\.seed\s*\(|default_rng\s*\(|manual_seed\s*\(", src)
+    # only datetime.now / date.today (computing an expected value from the clock) — NOT
+    # time.time()/monotonic(), which are almost always duration/timeout guards (legit).
+    walltime = re.compile(r"\b(datetime\.now|datetime\.today|date\.today|datetime\.utcnow)\s*\(")
+    if RNG.search(src) and not seeded:
+        findings.append(finding(
+            name, "tests", FAIL, "unseeded-randomness-in-verifier",
+            detail="the verifier uses randomness with no fixed seed — the same correct solution "
+                   "can pass or fail across runs. Reflection requires deterministic tests.",
+            location="tests/test_outputs.py",
+            fix="Seed the RNG (random.seed / np.random.seed / default_rng(seed)) or use fixed inputs."))
+    if walltime.search(src):
+        findings.append(finding(
+            name, "tests", FAIL, "wall-clock-in-verifier",
+            detail="the verifier reads current time/date — grading can drift with wall-clock. "
+                   "Reflection forbids time-dependent verification.",
+            location="tests/test_outputs.py",
+            fix="Pin any time/date the check depends on to a fixed value baked into the fixture."))
 
     if not findings:
         findings.append(finding(name, "tests", PASS, "native-tests",
@@ -208,8 +309,9 @@ def main():
     for name, root in discover_tasks(a.tasks):
         findings.extend(check_task(name, root))
     emit(findings, a.out)
-    n = sum(1 for f in findings if f["severity"] == WARN)
-    print(f"{len(findings)} findings, {n} WARN -> {a.out}")
+    nf = sum(1 for f in findings if f["severity"] == FAIL)
+    nw = sum(1 for f in findings if f["severity"] == WARN)
+    print(f"{len(findings)} findings, {nf} FAIL, {nw} WARN -> {a.out}")
 
 
 if __name__ == "__main__":
