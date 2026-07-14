@@ -272,8 +272,12 @@ def check_task(name, root):
                            fix="Use CMD instead, and start any service explicitly in solve.sh."))
 
     # test framework baked into the AGENT image (TB rubric: test deps belong in
-    # the verifier / run-tests.sh, not the agent's build).
-    if re.search(r"(?:pip3?|uv\s+pip)\s+install\b[^\n]*\b(pytest|unittest2|nose2?)\b", text, re.I):
+    # the verifier / run-tests.sh, not the agent's build). This does NOT apply to
+    # Reflection single-image Harbor tasks: there is no separate verifier image and
+    # runtime installs in test.sh are forbidden, so the verifier's pytest MUST be
+    # baked into the one image — flagging it there is a false positive.
+    if (not reflection
+            and re.search(r"(?:pip3?|uv\s+pip)\s+install\b[^\n]*\b(pytest|unittest2|nose2?)\b", text, re.I)):
         out.append(finding(name, "dockerfile", FAIL, "test-deps-in-image",
                            detail="the agent image installs a test framework (pytest/nose) — "
                                   "test-only deps should be installed by the verifier "

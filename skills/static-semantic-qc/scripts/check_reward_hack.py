@@ -137,6 +137,24 @@ def _analyze_py(path, name, rel):
         tree = ast.parse(src)
     except SyntaxError:
         return out
+    # Module-level helpers whose OWN body is failure-capable. A test that delegates
+    # its checks to such a helper (e.g. `def test_check_1(): _check_pytest()`) is not
+    # assertion-free — treating it as such is a false positive, so collect the names
+    # of asserting helpers and count a call to one as a failure-capable construct.
+    asserting_helpers = set()
+    for n in ast.walk(tree):
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and _calls_assertion(n):
+            asserting_helpers.add(n.name)
+
+    def _asserts_or_delegates(node):
+        if _calls_assertion(node):
+            return True
+        for c in ast.walk(node):
+            if isinstance(c, ast.Call):
+                nm = getattr(c.func, "attr", getattr(c.func, "id", ""))
+                if nm in asserting_helpers:
+                    return True
+        return False
     # verifier imports the reference solution — it can assert against the oracle's
     # own output instead of the agent's, or just leak the answer into the test.
     for n in ast.walk(tree):
@@ -207,8 +225,8 @@ def _analyze_py(path, name, rel):
                                       "content — an empty/stub file would pass.",
                                location=loc,
                                fix="Assert on the file's content/value, not just that it exists."))
-        elif not _calls_assertion(node):
-            # no failure-capable construct anywhere
+        elif not _asserts_or_delegates(node):
+            # no failure-capable construct anywhere (and no call to an asserting helper)
             out.append(finding(name, "anti_cheat", FAIL, "no-assertion-test",
                                detail=f"`{node.name}` contains no assertion/raise/fail — "
                                       "it cannot fail.",
@@ -303,6 +321,12 @@ def _analyze_test_sh(path, name, reflection=False):
                                        "image; test.sh must not run apt-get/pip install or curl|sh."))
                 break
 
+        # Collect EVERY absolute reward path written by test.sh, then flag only if the
+        # Harbor-standard path is never among them. Many deliveries dual-write (e.g. the
+        # sandbox signal /logs/tests/reward.txt AND /logs/verifier/reward.txt); flagging
+        # the non-standard line while the standard one is also written is a false
+        # positive, so require the standard path to be ABSENT before flagging.
+        reward_paths = []  # [(line-no, path)]
         for i, ln in enumerate(lines, 1):
             m = REWARD_REDIRECT.search(ln)
             if not m:
@@ -310,13 +334,15 @@ def _analyze_test_sh(path, name, reflection=False):
             rpath = m.group(2)
             if "$" in rpath or "{" in rpath:
                 continue  # variable-driven path — can't statically resolve
-            if rpath and rpath != STD_REWARD_PATH and rpath.startswith("/"):
-                out.append(finding(name, "anti_cheat", FAIL, "reward-path-nonstandard",
-                                   detail=f"tests/test.sh writes the reward to `{rpath}`, not the "
-                                          f"Harbor-standard `{STD_REWARD_PATH}` (must hold 1/0).",
-                                   location=f"tests/test.sh:{i}",
-                                   fix=f"Write the reward to {STD_REWARD_PATH} (`1` success / `0` fail)."))
-                break
+            if rpath and rpath.startswith("/"):
+                reward_paths.append((i, rpath))
+        if reward_paths and not any(p == STD_REWARD_PATH for _, p in reward_paths):
+            i, rpath = reward_paths[0]
+            out.append(finding(name, "anti_cheat", FAIL, "reward-path-nonstandard",
+                               detail=f"tests/test.sh writes the reward to `{rpath}`, not the "
+                                      f"Harbor-standard `{STD_REWARD_PATH}` (must hold 1/0).",
+                               location=f"tests/test.sh:{i}",
+                               fix=f"Write the reward to {STD_REWARD_PATH} (`1` success / `0` fail)."))
     return out
 
 

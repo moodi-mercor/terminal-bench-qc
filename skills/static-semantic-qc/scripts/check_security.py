@@ -62,8 +62,45 @@ OBFUSCATION = [
 LONG_B64 = re.compile(r"[A-Za-z0-9+/]{120,}={0,2}")
 
 
+# Binary / archive / media extensions: their raw bytes decode to garbage that
+# spuriously matches the base64 and bidi-Unicode patterns (a .gz IS a long binary
+# blob; a .zip contains RLO/ZWJ bytes). These are not agent-readable *text*, so the
+# obfuscation / hidden-unicode / injection scans do not apply.
+BINARY_EXT = {
+    ".gz", ".tgz", ".bz2", ".xz", ".zst", ".zip", ".tar", ".7z", ".rar",
+    ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".ico", ".webp", ".pdf", ".svgz",
+    ".so", ".o", ".a", ".bin", ".dat", ".pyc", ".pyd", ".wasm", ".class", ".jar",
+    ".woff", ".woff2", ".ttf", ".otf", ".eot",
+    ".mp3", ".mp4", ".wav", ".flac", ".avi", ".mov", ".mkv", ".ogg",
+    ".parquet", ".pkl", ".pickle", ".npy", ".npz", ".h5", ".hdf5", ".pt", ".pth",
+    ".onnx", ".db", ".sqlite", ".sqlite3", ".xlsx", ".docx", ".pptx", ".feather", ".arrow",
+}
+
+
+def _is_binary(full):
+    """True if the file is a known-binary extension or its bytes look non-textual."""
+    if os.path.splitext(full)[1].lower() in BINARY_EXT:
+        return True
+    try:
+        with open(full, "rb") as f:
+            chunk = f.read(4096)
+    except Exception:
+        return True
+    if not chunk:
+        return False
+    if b"\x00" in chunk:  # NUL byte => binary
+        return True
+    # high fraction of bytes outside the printable/whitespace range => binary
+    nontext = sum(b < 9 or (13 < b < 32) for b in chunk)
+    return nontext / len(chunk) > 0.10
+
+
 def _agent_visible_files(root):
-    """instruction.md + every text file under environment/ (what the agent sees)."""
+    """instruction.md + every text file under environment/ (what the agent sees).
+
+    Binary/archive/media files are skipped: they are not agent-readable text, and
+    scanning their raw bytes produces false obfuscation / hidden-unicode hits.
+    """
     p = task_paths(root)
     files = []
     if os.path.isfile(p["instruction.md"]):
@@ -73,6 +110,8 @@ def _agent_visible_files(root):
         for dirpath, _dirs, fnames in os.walk(env):
             for fn in fnames:
                 full = os.path.join(dirpath, fn)
+                if _is_binary(full):
+                    continue
                 files.append((os.path.relpath(full, root), full))
     return files
 
@@ -104,8 +143,23 @@ def check_task(name, root):
                                location=rel,
                                fix="Strip the zero-width/BOM/bidi control characters."))
 
-        hit = next((label for rx, label in OBFUSCATION if rx.search(text)), None)
-        if not hit and rel != "instruction.md" and LONG_B64.search(text):
+        # curl|sh AND base64-decode are spec-allowed at *build* time (Dockerfile RUN):
+        # "Tools installed via curl | sh install during build." Only eval/exec of
+        # decoded data (a real dynamic-exec vector) is blocking inside the Dockerfile.
+        is_dockerfile = os.path.basename(rel) == "Dockerfile"
+        hit = None
+        for rx, label in OBFUSCATION:
+            if not rx.search(text):
+                continue
+            if is_dockerfile and label in ("curl|sh dynamic execution",
+                                           "base64 decode of an inline blob"):
+                continue  # build-time install/curl|sh is permitted
+            hit = label
+            break
+        # The bare long-base64 heuristic only applies to EXECUTABLE scripts — data
+        # files (.b64/.hex/.jsonl/.txt/.csv/.md/...) legitimately hold encoded data.
+        is_script = os.path.splitext(rel)[1].lower() in (".sh", ".bash", ".py", ".zsh")
+        if not hit and is_script and LONG_B64.search(text):
             hit = "long base64-encoded blob"
         if hit:
             out.append(finding(name, "anti_cheat", FAIL, "obfuscated-payload",

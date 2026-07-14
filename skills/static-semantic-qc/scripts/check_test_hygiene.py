@@ -257,10 +257,17 @@ def check_task(name, root):
 
     # 5. no subjective grading / LLM-as-judge in the verifier (spec: "Verifiable" §68,
     #    "No subjective grading" §170). Flag an LLM API call inside the verifier.
-    LLMJUDGE = re.compile(r"\b(openai|anthropic|litellm|ollama|google\.generativeai|"
-                          r"cohere|replicate|together)\b|chat\.completions|messages\.create|"
-                          r"ChatCompletion|\bLLM\b|as[- ]?a[- ]?judge|api\.openai\.com|"
-                          r"api\.anthropic\.com|generativelanguage\.googleapis", re.I)
+    # Require an actual LLM SDK import OR an API-call token — NOT a bare word/substring.
+    # (The old pattern matched the English word "together" and "llm" inside hyphenated
+    # identifiers/paths, which are false positives.)
+    LLMJUDGE = re.compile(
+        r"^\s*(?:import|from)\s+(?:openai|anthropic|litellm|ollama|cohere|replicate|together|"
+        r"google\.generativeai|vertexai)\b"                       # a real SDK import
+        r"|\b(?:openai|anthropic|litellm|cohere|genai)\.[A-Za-z_]"  # provider.<attr> call
+        r"|chat\.completions|messages\.create|ChatCompletion"     # canonical API calls
+        r"|api\.openai\.com|api\.anthropic\.com|generativelanguage\.googleapis"
+        r"|as[-\s]?a[-\s]?judge|llm[-_\s]?judge|judge[-_\s]?llm",  # explicit judge phrasing
+        re.I | re.M)
     if LLMJUDGE.search(src):
         findings.append(finding(
             name, "tests", FAIL, "llm-judge-in-verifier",
