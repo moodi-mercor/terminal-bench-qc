@@ -47,7 +47,7 @@ def gen_mutants(key, model, tdir, task, k):
     user = (f"Produce {k} mutants.\n\n===== instruction.md =====\n{instr[:6000]}\n\n"
             f"===== solution/solve.sh (reference) =====\n{solve[:6000]}\n\n"
             f"===== tests/test_outputs.py =====\n{tout[:7000]}")
-    resp = fl.call(key, model, GEN_SYS, user)
+    resp = fl.call(key, model, GEN_SYS, user, effort="low")
     if "_err" in resp: return task, [], resp["_err"][:60]
     txt = "".join(b.get("text","") for b in resp.get("content",[]) if b.get("type")=="text")
     blocks = re.findall(r"<<<MUTANT\s+requirement=(.*?)\r?\n(.*?)\r?\n>>>END", txt, re.S)

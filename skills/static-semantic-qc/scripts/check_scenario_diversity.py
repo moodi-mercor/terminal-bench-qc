@@ -46,12 +46,31 @@ def scenario_words(text, opening_chars=400):
     return set(words)
 
 
+_HEX = re.compile(r"[0-9a-f]{6,}$")
+
+
+def name_tokens(task_name):
+    """Kebab tokens of a task name, minus the trailing hex id and structural stopwords.
+    Unlike scenario detection we do NOT drop GENERIC words here: a generic tech word
+    (audit/cache/ledger/pipeline) saturating >5% of NAMES is itself naming-monotony."""
+    parts = task_name.lower().split("-")
+    if parts and _HEX.fullmatch(parts[-1]):
+        parts = parts[:-1]
+    return set(w for w in parts if len(w) >= 3 and w not in STOP)
+
+
 def check(tasks_dir, threshold):
     tasks = [t for t in os.listdir(tasks_dir) if os.path.isdir(os.path.join(tasks_dir, t))]
     n = len(tasks)
     freq = collections.Counter()
     per_word_tasks = collections.defaultdict(list)
+    name_freq = collections.Counter()
+    per_name_tasks = collections.defaultdict(list)
     for t in tasks:
+        # task-NAME keyword concentration (client: clustered words leak into names too)
+        for w in name_tokens(t):
+            name_freq[w] += 1
+            per_name_tasks[w].append(t)
         p = os.path.join(tasks_dir, t, "instruction.md")
         if not os.path.isfile(p):
             continue
@@ -60,7 +79,8 @@ def check(tasks_dir, threshold):
             freq[w] += 1
             per_word_tasks[w].append(t)
     over = [(w, c, c / n) for w, c in freq.most_common() if c / n > threshold]
-    return n, over, per_word_tasks
+    over_names = [(w, c, c / n) for w, c in name_freq.most_common() if c / n > threshold]
+    return n, over, per_word_tasks, over_names, per_name_tasks
 
 
 def main():
@@ -69,13 +89,18 @@ def main():
     ap.add_argument("--threshold", type=float, default=0.05)
     ap.add_argument("--out", default="scenario_clusters.json")
     args = ap.parse_args()
-    n, over, per = check(args.tasks, args.threshold)
-    print(f"[scenario-diversity] {n} tasks; scenario words over {args.threshold*100:.0f}%: {len(over)}")
+    n, over, per, over_names, per_name = check(args.tasks, args.threshold)
+    print(f"[scenario-diversity] {n} tasks; INSTRUCTION scenario words over {args.threshold*100:.0f}%: {len(over)}")
     for w, c, frac in over:
+        print(f"  {w:22s} {c:5d}  ({frac*100:.1f}%)")
+    print(f"[name-diversity] TASK-NAME tokens over {args.threshold*100:.0f}%: {len(over_names)}")
+    for w, c, frac in over_names:
         print(f"  {w:22s} {c:5d}  ({frac*100:.1f}%)")
     json.dump({"tasks": n, "threshold": args.threshold,
                "over_threshold": [{"word": w, "count": c, "frac": round(f, 4),
-                                   "tasks": per[w]} for w, c, f in over]},
+                                   "tasks": per[w]} for w, c, f in over],
+               "over_threshold_names": [{"word": w, "count": c, "frac": round(f, 4),
+                                         "tasks": per_name[w]} for w, c, f in over_names]},
               open(args.out, "w"))
     print(f"-> {args.out}")
 

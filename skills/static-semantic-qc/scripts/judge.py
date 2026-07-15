@@ -162,7 +162,47 @@ ADVERSARY_OUT = (
 
 
 # ----------------------------------------------------------- api call -------
+_OAI = None
+def _oai():
+    """OpenAI client (for gpt-* judge models). Key from OPENAI_API_KEY or code-qa-evals/.env."""
+    global _OAI
+    if _OAI is None:
+        import openai
+        k = os.environ.get("OPENAI_API_KEY")
+        if not k:
+            for cand in ("/Users/mahmoodmapara/Desktop/code-qa-evals/.env",
+                         os.path.expanduser("~/.env")):
+                if os.path.isfile(cand):
+                    for ln in open(cand):
+                        if ln.startswith("OPENAI_API_KEY="):
+                            k = ln.split("=", 1)[1].strip().strip('"').strip("'"); break
+                if k: break
+        _OAI = openai.OpenAI(api_key=k)
+    return _OAI
+
+
+def _call_openai(model, system, user, effort, max_tokens, retries=4):
+    """gpt-* dispatch; returns an Anthropic-shaped dict so extract_findings/usage_of work."""
+    for attempt in range(retries):
+        try:
+            r = _oai().chat.completions.create(
+                model=model, reasoning_effort=(effort if effort in ("low","medium","high") else "high"),
+                max_completion_tokens=max_tokens,
+                messages=[{"role": "system", "content": system}, {"role": "user", "content": user}])
+            u = r.usage
+            return {"content": [{"type": "text", "text": r.choices[0].message.content or ""}],
+                    "usage": {"input_tokens": getattr(u, "prompt_tokens", 0),
+                              "output_tokens": getattr(u, "completion_tokens", 0)},
+                    "stop_reason": r.choices[0].finish_reason}
+        except Exception:
+            if attempt < retries - 1:
+                time.sleep(2.0 * (attempt + 1)); continue
+            raise
+
+
 def call_api(key, model, system, user, effort, max_tokens=16000, retries=4):
+    if model.startswith("gpt"):
+        return _call_openai(model, system, user, effort, max_tokens, retries)
     # 16000 is the safe non-streaming ceiling: at effort high, adaptive thinking
     # consumes most of max_tokens, so a smaller budget truncates the JSON output.
     body = json.dumps({
@@ -252,6 +292,9 @@ def main():
     ap.add_argument("--max-tokens", type=int, default=16000,
                     help="output budget; keep <=16000 for non-streaming (thinking shares it)")
     ap.add_argument("--workers", type=int, default=6)
+    ap.add_argument("--prompt-version", default="v1",
+                    help="reviewer/adversary prompt version (v1=raw-corpus adversarial; "
+                         "v2=remediated-delivery, objective gates trusted, PASS-default)")
     ap.add_argument("--static-dir", default="", help="qc_out with static findings for FP-verification")
     ap.add_argument("--only", default="")
     args = ap.parse_args()
@@ -259,12 +302,15 @@ def main():
 
     key = load_key()
     roles = ["reviewer", "adversary"] if args.role == "both" else [args.role]
-    prompts = {r: read_text(os.path.join(HERE, "..", "prompts", f"tb-task-qc-{r}-v1.md"))
+    prompts = {r: read_text(os.path.join(HERE, "..", "prompts", f"tb-task-qc-{r}-{args.prompt_version}.md"))
                for r in roles}
     out_instr = {"reviewer": REVIEWER_OUT, "adversary": ADVERSARY_OUT}
     static = load_static(args.static_dir)
 
-    only = {s for s in args.only.split(",") if s}
+    if args.only.startswith("@"):
+        only = {ln.strip() for ln in open(args.only[1:]) if ln.strip() and not ln.startswith("#")}
+    else:
+        only = {s for s in args.only.split(",") if s}
     tasks = [(n, r) for n, r in discover_tasks(args.tasks) if not only or n in only]
     if not tasks:
         print("No tasks found.")
