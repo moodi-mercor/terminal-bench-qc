@@ -141,6 +141,7 @@ class DocumentedWorkflowTests(unittest.TestCase):
 import check_structure  # noqa: E402
 import check_test_hygiene  # noqa: E402
 import check_portability  # noqa: E402
+import check_metadata  # noqa: E402
 
 
 def _make_task(tmp, files):
@@ -206,6 +207,35 @@ class TaskNameConventionTests(unittest.TestCase):
     def test_kebab_name_passes(self):
         toml = '[metadata]\ncategory = "x"\ntask_objective = ["implement_feature"]\n'
         self.assertNotIn("task-name-not-kebab", self._name_findings("fix-nginx-tls-config", toml))
+
+
+class MetadataFailSeverityTests(unittest.TestCase):
+    """Batch-1 feedback: invalid avg_at_8 fractions and non-GPT-5.4 grading are hard
+    FAILs, not warnings."""
+
+    _BASE = '[metadata]\ncategory = "x"\ntask_objective = ["implement_feature"]\n'
+
+    def _meta(self, extra):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = _make_task(tmp, {"task.toml": self._BASE + extra,
+                                    "instruction.md": "do the thing"})
+            return {f["title"]: f["severity"] for f in check_metadata.check_task("t", root)}
+
+    def test_invalid_avg_at_8_fraction_is_fail(self):
+        res = self._meta('avg_at_8 = 0.1111\nmodel_tested = "GPT-5.4"\n')
+        self.assertEqual(res.get("avg-at-8-invalid-fraction"), check_metadata.FAIL)
+
+    def test_valid_eighth_avg_at_8_passes(self):
+        self.assertNotIn("avg-at-8-invalid-fraction",
+                         self._meta('avg_at_8 = 0.25\nmodel_tested = "GPT-5.4"\n'))
+
+    def test_opus_model_is_fail(self):
+        res = self._meta('avg_at_8 = 0.25\nmodel_tested = "Opus 4.8"\n')
+        self.assertEqual(res.get("model-not-gpt-5.4"), check_metadata.FAIL)
+
+    def test_gpt_5_4_model_passes(self):
+        self.assertNotIn("model-not-gpt-5.4",
+                         self._meta('avg_at_8 = 0.25\nmodel_tested = "GPT-5.4"\n'))
 
 
 if __name__ == "__main__":

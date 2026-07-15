@@ -280,13 +280,16 @@ def check_task(name, root):
                                location="task.toml [metadata]",
                                fix="Re-benchmark with Terminus-2 on GPT-5.4/Opus-4.8 and record avg@8."))
         elif avg is not None and abs(avg * 8 - round(avg * 8)) > 1e-6:
-            # not a clean multiple of 1/8 (e.g. task run over 7 or 9 attempts) — snap to nearest k/8
+            # not a clean multiple of 1/8: the value cannot come from 8 attempts, so the
+            # difficulty benchmark was incomplete or wrong and must be re-run (not snapped).
             snapped = round(avg * 8) / 8
-            out.append(finding(name, "metadata", WARN, "avg-at-8-not-eighth",
-                               detail=f"avg_at_8={avg} is not a multiple of 1/8 (likely run over "
-                                      f"a non-8 attempt count); round to the nearest eighth ({snapped}).",
+            out.append(finding(name, "metadata", FAIL, "avg-at-8-invalid-fraction",
+                               detail=f"avg_at_8={avg} is not a multiple of 1/8, so it cannot be an "
+                                      "average over 8 attempts — the difficulty validation was "
+                                      f"incomplete or incorrect (nearest valid value is {snapped}).",
                                location="task.toml [metadata]",
-                               fix=f"Set avg_at_8 = {snapped} (nearest k/8), or re-benchmark over 8 attempts."))
+                               fix="Re-run the avg@8 benchmark over exactly 8 attempts (Terminus-2 "
+                                   "on GPT-5.4) and record the resulting k/8 value."))
         if avg is None:
             out.append(finding(name, "metadata", FAIL, "missing-avg-at-8",
                                detail="metadata.avg_at_8 missing — Reflection requires a "
@@ -300,19 +303,15 @@ def check_task(name, root):
                                       "measured on Opus-4.8 or GPT-5.4.",
                                location="task.toml [metadata]",
                                fix="Set model_tested to the frontier model used (GPT-5.4 / Opus 4.8)."))
-        elif _norm(model_tested) not in APPROVED_MODELS:
-            out.append(finding(name, "metadata", WARN, "model-tested-not-approved",
-                               detail=f"model_tested={model_tested!r} is not an approved "
-                                      "difficulty model (Opus 4.8 / GPT-5.4).",
+        elif _norm(model_tested) not in ("gpt 5 4", "gpt5 4"):
+            out.append(finding(name, "metadata", FAIL, "model-not-gpt-5.4",
+                               detail=f"model_tested={model_tested!r} is not GPT-5.4. We committed "
+                                      "to GPT-5.4 as the difficulty model going forward, so tasks "
+                                      "graded on Opus (or any other model) must be re-benchmarked "
+                                      "on GPT-5.4.",
                                location="task.toml [metadata]",
-                               fix="Benchmark difficulty on Opus 4.8 or GPT-5.4 and record it."))
-        elif "opus" in _norm(model_tested):
-            out.append(finding(name, "metadata", WARN, "model-not-preferred-gpt-5.4",
-                               detail=f"model_tested={model_tested!r} is Opus — allowed under the "
-                                      "spec, but the client prefers GPT-5.4 used consistently for "
-                                      "the difficulty benchmark.",
-                               location="task.toml [metadata]",
-                               fix="Default to GPT-5.4 for the avg@8 difficulty benchmark."))
+                               fix="Re-run the avg@8 difficulty benchmark on GPT-5.4 (Terminus-2) "
+                                   "and record model_tested = \"GPT-5.4\"."))
         if not agent_tested:
             out.append(finding(name, "metadata", WARN, "missing-agent-tested",
                                detail="metadata.agent_tested missing — Reflection mandates the "
