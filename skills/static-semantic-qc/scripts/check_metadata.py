@@ -306,6 +306,13 @@ def check_task(name, root):
                                       "difficulty model (Opus 4.8 / GPT-5.4).",
                                location="task.toml [metadata]",
                                fix="Benchmark difficulty on Opus 4.8 or GPT-5.4 and record it."))
+        elif "opus" in _norm(model_tested):
+            out.append(finding(name, "metadata", WARN, "model-not-preferred-gpt-5.4",
+                               detail=f"model_tested={model_tested!r} is Opus — allowed under the "
+                                      "spec, but the client prefers GPT-5.4 used consistently for "
+                                      "the difficulty benchmark.",
+                               location="task.toml [metadata]",
+                               fix="Default to GPT-5.4 for the avg@8 difficulty benchmark."))
         if not agent_tested:
             out.append(finding(name, "metadata", WARN, "missing-agent-tested",
                                detail="metadata.agent_tested missing — Reflection mandates the "

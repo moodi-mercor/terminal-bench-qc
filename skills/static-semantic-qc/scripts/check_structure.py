@@ -16,7 +16,7 @@ import re
 import subprocess
 
 from common import (FAIL, WARN, PASS, finding, emit, read_text,
-                    discover_tasks, task_paths, load_toml, is_reflection_schema)
+                    discover_tasks, task_paths)
 
 # lowercase kebab-case, 1+ segments (TB/Harbor task-name convention)
 KEBAB = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -51,8 +51,6 @@ RECOMMENDED = [
 def check_task(name, root):
     out = []
     p = task_paths(root)
-    meta = load_toml(p["task.toml"]) if os.path.isfile(p["task.toml"]) else {}
-    reflection = is_reflection_schema(meta)
 
     for key, sev, label in REQUIRED:
         path = p[key]
@@ -99,14 +97,17 @@ def check_task(name, root):
                 fix="If the task needs packages/data, add the required RUN/COPY steps."))
 
     # ---- package identity / hygiene ----
-    # Reflection deliveries use opaque `task_<hex>` names by design — that is spec-
-    # compliant, so the kebab-case convention only applies to TB2/OTS-shaped tasks.
-    if name and not KEBAB.match(name) and not reflection:
+    # The Reflection spec REQUIRES lowercase kebab-case names, and Batch-1 feedback
+    # explicitly flagged opaque `task_<hex>` names as a defect to rename — so this
+    # applies to every task, including Reflection deliveries.
+    if name and not KEBAB.match(name):
         out.append(finding(
             name, "structure", FAIL, "task-name-not-kebab",
-            detail=f"task name `{name}` is not lowercase kebab-case.",
+            detail=f"task name `{name}` is not lowercase kebab-case "
+                   "(opaque `task_<hex>` names are a Reflection-flagged defect).",
             location="<task dir>",
-            fix="Rename the task to lowercase-kebab-case (e.g. `fix-nginx-tls-config`)."))
+            fix="Rename the task to a meaningful, specific lowercase-kebab-case name "
+                "(e.g. `fix-nginx-tls-config`)."))
     if name and len(name) > MAX_NAME_LEN:
         out.append(finding(
             name, "structure", FAIL, "task-name-too-long",

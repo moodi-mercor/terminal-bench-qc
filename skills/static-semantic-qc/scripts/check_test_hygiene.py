@@ -141,6 +141,23 @@ def check_task(name, root):
             fix="Remove the base64 wrapping; inline the logic as native Python "
                 "(or a plain subprocess call to the agent's deliverable if that's what it runs)."))
 
+    # encoded ground truth — client flagged base64 `_TRUTH` blobs (encoded expected
+    # values in tests/Oracle). Ground truth must be readable/diffable, not base64.
+    solve_src = read_text(p["solve.sh"]) or ""
+    ENC_TRUTH = re.compile(
+        r"(?i)\b\w*(?:truth|expected|golden|answer|reference|digest|checksum|payload)\w*"
+        r"\s*=\s*[rbf]?['\"]([A-Za-z0-9+/]{40,}={0,2})['\"]")
+    enc_hits = len(ENC_TRUTH.findall(src)) + len(ENC_TRUTH.findall(solve_src))
+    if enc_hits:
+        findings.append(finding(
+            name, "tests", WARN, "encoded-ground-truth",
+            detail=f"{enc_hits} base64/encoded ground-truth blob(s) in tests/solution — encoded "
+                   "truth is opaque and un-reviewable; the client requires readable, diffable "
+                   "ground truth (a plain file checked against), not base64 `_TRUTH` strings.",
+            location="tests/test_outputs.py",
+            fix="Store ground truth as a readable file (json/csv/txt) the verifier reads and "
+                "compares; remove base64/encoded blobs from tests and solve.sh."))
+
     runner_lits = _subprocess_string_literals(src)
     src_lines = src.splitlines()
     haystacks = [v for v, _ in runner_lits] + b64_cmds

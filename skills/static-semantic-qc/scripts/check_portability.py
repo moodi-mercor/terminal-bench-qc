@@ -136,6 +136,19 @@ def _check_solve(root, name):
                                fix="Add `--break-system-packages` (or PIP_BREAK_SYSTEM_PACKAGES=1), "
                                    "or install into a venv."))
 
+    # oracle runtime dependency install — client flagged 364 tasks with Oracle installs.
+    # Deps must be baked into the image; solve.sh must not apt/pip/curl-install at runtime
+    # (needs network, non-reproducible) unless installing is intrinsically part of the task.
+    if re.search(r"\bapt(?:-get)?\s+install\b|\bpip3?\s+install\b|\bnpm\s+(?:install|ci)\b|"
+                 r"\bgem\s+install\b|\bcargo\s+install\b|curl\s+[^\n|]*\|\s*(?:sh|bash)", text):
+        out.append(finding(name, "solution", WARN, "oracle-runtime-install",
+                           detail="solve.sh installs a dependency at runtime (apt/pip/npm/gem/"
+                                  "cargo/curl|sh) — the Oracle should not need network installs; "
+                                  "verifier/solution dependencies must be baked into the image.",
+                           location="solution/solve.sh",
+                           fix="Bake the dependency into environment/Dockerfile at build time; "
+                               "remove the install from solve.sh (unless installing is the task)."))
+
     # redis-server in foreground
     for i, l in enumerate(lines, 1):
         if re.search(r"\bredis-server\b", l) and "--daemonize" not in l \

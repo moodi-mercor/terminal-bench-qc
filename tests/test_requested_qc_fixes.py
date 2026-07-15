@@ -139,11 +139,57 @@ class DocumentedWorkflowTests(unittest.TestCase):
 
 
 import check_structure  # noqa: E402
+import check_test_hygiene  # noqa: E402
+import check_portability  # noqa: E402
 
 
-class ReflectionNameExemptionTests(unittest.TestCase):
-    """Reflection deliveries use opaque `task_<hex>` names by design — the kebab-case
-    convention must not false-flag them (matches the Reflection spec)."""
+def _make_task(tmp, files):
+    root = Path(tmp)
+    for rel, content in files.items():
+        pth = root / rel
+        pth.parent.mkdir(parents=True, exist_ok=True)
+        pth.write_text(content, encoding="utf-8")
+    return root
+
+
+class Batch1FeedbackDetectorTests(unittest.TestCase):
+    """Regression coverage for the concrete Batch-1 feedback dimensions."""
+
+    def _hygiene(self, files):
+        with tempfile.TemporaryDirectory() as tmp:
+            return {f["title"] for f in check_test_hygiene.check_task("t", _make_task(tmp, files))}
+
+    def _portability(self, files):
+        with tempfile.TemporaryDirectory() as tmp:
+            return {f["title"] for f in check_portability.check_task("t", _make_task(tmp, files))}
+
+    def test_encoded_ground_truth_blob_flagged(self):
+        b64 = "QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVowMTIzNDU2Nzg5"  # 48 base64 chars
+        src = f'_TRUTH = "{b64}"\n\ndef test_check_1():\n    assert True\n'
+        self.assertIn("encoded-ground-truth",
+                      self._hygiene({"tests/test_outputs.py": src, "tests/test.sh": "pytest\n"}))
+
+    def test_oracle_runtime_install_flagged(self):
+        self.assertIn("oracle-runtime-install",
+                      self._portability({"solution/solve.sh": "#!/bin/bash\napt-get install -y jq\n"}))
+
+    def test_generic_db_bootstrap_flagged(self):
+        ts = "pg_ctl start\nmysqld_safe &\nredis-server &\nmongod &\npytest\n"
+        titles = self._hygiene({"tests/test_outputs.py": "def test_check_1():\n    assert True\n",
+                                "tests/test.sh": ts,
+                                "solution/solve.sh": "#!/bin/bash\ntrue\n",
+                                "instruction.md": "do the thing"})
+        self.assertIn("generic-bootstrap-blocks", titles)
+
+    def test_dangling_truth_reference_flagged(self):
+        src = 'def test_check_1():\n    open("/tests/.truth/expected.json").read()\n'
+        self.assertIn("dangling-truth-reference",
+                      self._hygiene({"tests/test_outputs.py": src, "tests/test.sh": "pytest\n"}))
+
+
+class TaskNameConventionTests(unittest.TestCase):
+    """The Reflection spec requires lowercase kebab-case; Batch-1 feedback flagged
+    opaque `task_<hex>` names as a defect. They must be flagged for every task."""
 
     def _name_findings(self, task_name, toml_body):
         with tempfile.TemporaryDirectory() as tmp:
@@ -152,13 +198,14 @@ class ReflectionNameExemptionTests(unittest.TestCase):
             (root / "instruction.md").write_text("do the thing", encoding="utf-8")
             return {f["title"] for f in check_structure.check_task(task_name, root)}
 
-    def test_opaque_name_exempt_for_reflection_task(self):
+    def test_opaque_hash_name_flagged_even_for_reflection_task(self):
         toml = '[metadata]\ncategory = "x"\ntask_objective = ["implement_feature"]\n'
-        self.assertNotIn("task-name-not-kebab", self._name_findings("task_a1b2c3d4", toml))
+        self.assertIn("task-name-not-kebab",
+                      self._name_findings("task_5daf0a23551d47fe8e344df4b2d11f71", toml))
 
-    def test_non_kebab_name_still_flagged_for_tb2_task(self):
-        toml = '[metadata]\ndifficulty = "medium"\ncategory = "x"\n'
-        self.assertIn("task-name-not-kebab", self._name_findings("Task_NotKebab", toml))
+    def test_kebab_name_passes(self):
+        toml = '[metadata]\ncategory = "x"\ntask_objective = ["implement_feature"]\n'
+        self.assertNotIn("task-name-not-kebab", self._name_findings("fix-nginx-tls-config", toml))
 
 
 if __name__ == "__main__":
