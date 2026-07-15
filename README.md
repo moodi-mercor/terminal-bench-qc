@@ -118,10 +118,12 @@ in [`eval/README.md`](eval/README.md).
 
 ## Setup
 
-Python 3.9+ (detectors are stdlib-only; `studio_pull.py` / trajectory pull use
-`requests`). Studio access needs a key:
+Python 3.9+. The instruction-length detector uses a pinned `tiktoken` encoding;
+`studio_pull.py` / trajectory pull also use `requests`. Install the static-QC
+dependency before running the skill:
 
 ```bash
+python -m pip install -r skills/static-semantic-qc/requirements.txt
 cp .env.example .env      # then set RLS_KEY=...   (.env is gitignored)
 ```
 
