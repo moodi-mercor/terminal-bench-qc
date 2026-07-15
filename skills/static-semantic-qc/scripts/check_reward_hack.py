@@ -332,6 +332,10 @@ def _analyze_test_sh(path, name, reflection=False):
             if not m:
                 continue
             rpath = m.group(2)
+            # \S* greedily grabs trailing shell punctuation when commands share a line
+            # (`> /logs/verifier/reward.txt; echo ...`); strip it so the path compares
+            # cleanly against the standard path.
+            rpath = rpath.rstrip(";,)&|'\"")
             if "$" in rpath or "{" in rpath:
                 continue  # variable-driven path — can't statically resolve
             if rpath and rpath.startswith("/"):
