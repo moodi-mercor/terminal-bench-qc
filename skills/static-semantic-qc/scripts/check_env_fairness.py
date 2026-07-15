@@ -161,7 +161,21 @@ def check_task(name, root):
             # ignore full-line shell comments — a documented "install baked in the
             # Dockerfile" note is not a runtime install.
             t = "\n".join(l for l in t.splitlines() if not l.lstrip().startswith("#"))
-            m = RUNTIME_INSTALL.search(t)
+            m = None
+            for cand in RUNTIME_INSTALL.finditer(t):
+                line = t[t.rfind("\n", 0, cand.start()) + 1:
+                         (t.find("\n", cand.end()) + 1 or len(t) + 1) - 1]
+                # exempt installs that fetch NOTHING from the network and can't be
+                # baked: editable/local installs of the agent's OWN deliverable
+                # (`pip install -e .`, `pip install /app`) and explicitly offline
+                # installs (`--no-index` / `--no-deps`). The package the agent writes
+                # during the task does not exist at build time, so it cannot be baked.
+                if re.search(r"pip[0-9]?\s+install\b", line) and re.search(
+                        r"(\s-e\b|--no-index|--no-deps|(?:^|\s)(?:\.|\.\.|/app|\./)(?:\s|$))",
+                        line):
+                    continue
+                m = cand
+                break
             if m:
                 out.append(finding(name, "anti_cheat", FAIL, "bakeable-runtime-install",
                                    detail=f"`{rel}` installs dependencies at run time "

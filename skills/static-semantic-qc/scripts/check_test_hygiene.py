@@ -65,6 +65,42 @@ JUSTIFIED = re.compile(r"fresh-interpreter import required|deliverable|process-l
 RUNNER = re.compile(r"\b(_run|_exec_check|_exec|subprocess\.(run|check_output|Popen|call))\s*\(")
 
 
+def _active_code_py(src):
+    """Python source with # comments and module/def/class docstrings removed, so a
+    `.truth/...` path that appears only in a comment or a docstring (refactored files
+    keep explanatory notes about the former .truth helper) is not mis-read as a live
+    delegation/dangling reference. Real string args to subprocess() are preserved."""
+    import io, tokenize, ast
+    try:
+        toks = [t for t in tokenize.generate_tokens(io.StringIO(src).readline)
+                if t.type != tokenize.COMMENT]
+        src2 = tokenize.untokenize((t.type, t.string) for t in toks)
+    except Exception:
+        src2 = "\n".join(l for l in src.splitlines() if not l.lstrip().startswith("#"))
+    try:
+        tree = ast.parse(src2)
+        lines = src2.split("\n")
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                b = getattr(node, "body", None)
+                if (b and isinstance(b[0], ast.Expr)
+                        and isinstance(getattr(b[0], "value", None), ast.Constant)
+                        and isinstance(b[0].value.value, str)):
+                    ds = b[0].value
+                    for ln in range(ds.lineno - 1, getattr(ds, "end_lineno", ds.lineno)):
+                        if 0 <= ln < len(lines):
+                            lines[ln] = ""
+        src2 = "\n".join(lines)
+    except Exception:
+        pass
+    return src2
+
+
+def _strip_sh_comments(ts):
+    """Shell source with full-line # comments removed."""
+    return "\n".join(l for l in ts.splitlines() if not l.lstrip().startswith("#"))
+
+
 def _subprocess_string_literals(src):
     """(value, lineno) for every string literal passed to a subprocess runner helper.
 
@@ -213,13 +249,17 @@ def check_task(name, root):
     #    client: test_outputs.py must be self-contained — calling a .truth/*.py verifier
     #    is delegation; referencing a .truth path that doesn't exist is a broken verifier.
     ts = read_text(p["test.sh"]) or ""
-    combined = src + "\n" + ts
+    # scan only ACTIVE code — a .truth path mentioned in a comment or docstring
+    # (refactored, already-inlined files keep such notes) is not a live reference.
+    active_src = _active_code_py(src)
+    active_ts = _strip_sh_comments(ts)
+    combined = active_src + "\n" + active_ts
     truth_dir = os.path.join(p["tests"], ".truth")
     truth_toks = set(re.findall(r'(?:/tests/)?\.truth/[\w./\-]+', combined))
     invokes_truth_py = (
         re.search(r'(subprocess\.\w+|_run|_exec|_exec_check|check_output|Popen|os\.system|run)\s*\([^\n]*\.truth/[\w./\-]+\.py', combined)
         or re.search(r'python3?\s+[^\n|]*\.truth/[\w./\-]+\.py', combined)
-        or re.search(r'^\s*(from|import)\s+[^\n]*\btruth\b', src, re.M))
+        or re.search(r'^\s*(from|import)\s+[^\n]*\btruth\b', active_src, re.M))
     if invokes_truth_py:
         findings.append(finding(
             name, "tests", FAIL, "delegates-to-truth-verifier",
