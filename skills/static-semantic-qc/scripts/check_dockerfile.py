@@ -64,8 +64,49 @@ APPROVED_IMAGES = {"golang", "python", "debian", "rust", "node", "ubuntu",
 APPROVED_REGISTRY = "public.ecr.aws/docker/library/"
 
 
+_HEREDOC_START = re.compile(r"<<[-~]?\s*[\"']?(\w+)[\"']?")
+
+
+def _strip_heredocs(text):
+    """Blank out heredoc bodies so embedded Python (`from x import y`) or SQL
+    (`FROM table`) lines are not mis-read as Dockerfile FROM instructions."""
+    out, marker = [], None
+    for line in text.splitlines():
+        if marker is None:
+            out.append(line)
+            m = _HEREDOC_START.search(line)
+            if m:
+                marker = m.group(1)
+        else:
+            if line.strip() == marker:   # closing delimiter alone on its line
+                marker = None
+            # otherwise drop the body line entirely
+    return "\n".join(out)
+
+
+def _logical_lines(text):
+    """Heredoc-stripped, backslash-continuations folded into single logical
+    instruction lines — so embedded shell/Python (`from x import`, `\\n\\`
+    continuations inside a RUN) is not mis-read as a Dockerfile FROM."""
+    lines, out, buf = _strip_heredocs(text).split("\n"), [], ""
+    for ln in lines:
+        cur = buf + ln
+        if cur.rstrip().endswith("\\"):
+            buf = cur.rstrip()[:-1] + " "
+        else:
+            out.append(cur); buf = ""
+    if buf:
+        out.append(buf)
+    return out
+
+
 def _from_refs(text):
-    return [m.group(1) for m in FROM_RE.finditer(text)]
+    refs = []
+    for ll in _logical_lines(text):
+        m = FROM_RE.match(ll)
+        if m:
+            refs.append(m.group(1))
+    return refs
 
 
 def _image_name(ref):

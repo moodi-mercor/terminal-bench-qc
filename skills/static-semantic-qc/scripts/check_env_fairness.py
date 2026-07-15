@@ -158,6 +158,9 @@ def check_task(name, root):
         # bakeable runtime installs in the verifier or the reference solution
         for rel in ("tests/test.sh", "solution/solve.sh"):
             t = read_text(os.path.join(root, rel))
+            # ignore full-line shell comments — a documented "install baked in the
+            # Dockerfile" note is not a runtime install.
+            t = "\n".join(l for l in t.splitlines() if not l.lstrip().startswith("#"))
             m = RUNTIME_INSTALL.search(t)
             if m:
                 out.append(finding(name, "anti_cheat", FAIL, "bakeable-runtime-install",
