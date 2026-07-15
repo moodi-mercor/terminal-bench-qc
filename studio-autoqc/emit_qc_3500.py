@@ -90,6 +90,10 @@ BLOCKING = {
     # environment breakage / undocumented network
     "systemd-assumption", "dockerfile-entrypoint", "internet-on-undocumented",
     "verifier-unbounded-call",
+    # infra resource misconfig — cpus=0/memory=0 makes Modal reject the container
+    # ("CPU request must be a positive number"), so the task silently scores 0 on the
+    # client harness (= "Model Failure"). Critical, NOT advisory.
+    "placeholder-zero-resource", "cpus-above-client-cap",
 }
 
 
