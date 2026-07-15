@@ -209,6 +209,74 @@ class TaskNameConventionTests(unittest.TestCase):
         self.assertNotIn("task-name-not-kebab", self._name_findings("fix-nginx-tls-config", toml))
 
 
+class EncodedContentHardeningTests(unittest.TestCase):
+    """Encoded ground truth must be caught outside test_outputs.py, and even when
+    test_outputs.py is absent (the early-return used to skip solve.sh)."""
+
+    def _hygiene(self, files):
+        with tempfile.TemporaryDirectory() as tmp:
+            return {f["title"] for f in check_test_hygiene.check_task("t", _make_task(tmp, files))}
+
+    def test_base64_truth_in_solve_without_test_outputs(self):
+        b64 = "QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVowMTIzNDU2Nzg5"
+        titles = self._hygiene({"solution/solve.sh": f'#!/bin/bash\n_TRUTH="{b64}"\n'})
+        self.assertIn("encoded-ground-truth", titles)
+        self.assertNotIn("test-hygiene-unknown", titles)  # did not bail early
+
+    def test_base64_truth_in_truth_fixture_file(self):
+        b64 = "QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVowMTIzNDU2Nzg5"
+        titles = self._hygiene({"tests/test_outputs.py": "def test_check_1():\n    assert True\n",
+                                "tests/.truth/expected.py": f'GOLDEN = "{b64}"\n'})
+        self.assertIn("encoded-ground-truth", titles)
+
+
+class ObjectiveCoverageTests(unittest.TestCase):
+    """Objective/artifact coverage is a FAIL and accounts for required labels that
+    never appear in the delivery (full-taxonomy, not just present labels)."""
+
+    def test_missing_required_objective_is_fail(self):
+        import json as _json
+        import check_diversity
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            toml = ('[metadata]\ncategory = "software-engineering"\nsubcategory = "x"\n'
+                    'task_objective = ["implement_feature"]\nartifact_type = ["patch"]\n'
+                    'avg_at_8 = 0.25\nmodel_tested = "GPT-5.4"\n')
+            for i in range(20):
+                d = root / f"task-{i:02d}"
+                (d).mkdir(parents=True)
+                (d / "task.toml").write_text(toml, encoding="utf-8")
+                (d / "instruction.md").write_text("do the thing", encoding="utf-8")
+            out = root / "div.json"
+            argv = ["check_diversity.py", str(root), "--out", str(out), "--min-tasks", "20"]
+            old = sys.argv
+            sys.argv = argv
+            try:
+                check_diversity.main()
+            finally:
+                sys.argv = old
+            findings = _json.load(open(out))
+        by_title = {f["title"]: f["severity"] for f in findings}
+        self.assertEqual(by_title.get("task-objective-missing"), check_diversity.FAIL)
+        self.assertEqual(by_title.get("artifact-type-missing"), check_diversity.FAIL)
+
+
+class ScenarioKeywordTests(unittest.TestCase):
+    """The keyword-concentration check detects a dominant task-name token."""
+
+    def test_dominant_name_token_detected(self):
+        import check_scenario_diversity
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for i, suffix in enumerate(["alpha", "beta", "gamma", "delta", "epsilon"]):
+                d = root / f"widget-{suffix}-{i:02d}"
+                d.mkdir(parents=True)
+                (d / "instruction.md").write_text(f"process the {suffix} record", encoding="utf-8")
+                (d / "task.toml").write_text('[metadata]\ncategory = "x"\n', encoding="utf-8")
+            n, over, per, over_names, per_name = check_scenario_diversity.check(str(root), 0.05)
+        self.assertIn("widget", {w for w, c, f in over_names})
+
+
 class MetadataFailSeverityTests(unittest.TestCase):
     """Batch-1 feedback: invalid avg_at_8 fractions and non-GPT-5.4 grading are hard
     FAILs, not warnings."""

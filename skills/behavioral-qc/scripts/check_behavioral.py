@@ -172,6 +172,26 @@ def run_task(name, root, args):
                                   f"the reference doesn't pass its own verifier: {olog[-200:]}",
                            location="solution/solve.sh", fix="Fix solve.sh or the "
                            "verifier/environment so the oracle scores 1.0."))
+    # Determinism by EXECUTION, not just static smells (Reflection: "Repeated Oracle
+    # deterministic" / "Verifier deterministic"). Re-run the oracle+verifier N times from
+    # a clean container; the verdict must be identical every run. A verdict that flips
+    # across identical clean runs is a nondeterminism defect no static check can catch.
+    if args.determinism_trials > 1:
+        verdicts = [_verifier_passed(orc, olog)]
+        for _ in range(args.determinism_trials - 1):
+            drc, dlog = trial("oracle")
+            verdicts.append(_verifier_passed(drc, dlog))
+        if len(set(verdicts)) > 1:
+            npass, ntot = sum(verdicts), len(verdicts)
+            out.append(finding(name, "behavioral", FAIL, "nondeterministic-oracle",
+                               detail=f"the oracle+verifier gave inconsistent verdicts across "
+                                      f"{ntot} identical clean runs ({npass}/{ntot} passed) — the "
+                                      "task is not deterministic; grading can flip between runs.",
+                               location="tests/",
+                               fix="Remove the nondeterminism (seed RNG, pin timestamps, sort "
+                                   "outputs, fix service races) so repeated oracle runs score "
+                                   "identically.",
+                               layer="behavioral"))
     # "Fast enough" (Reflection): the verifier's own runtime must not exceed its
     # configured budget. We timed just the verifier step on the oracle (full-pass) run.
     vsecs = _verifier_secs(olog)
@@ -217,6 +237,9 @@ def main():
     ap.add_argument("--execute", action="store_true",
                     help="ACTUALLY build+run in Docker (expensive). Without this, prints the plan only.")
     ap.add_argument("--reward-iso", action="store_true", help="also run the reward-isolation trial")
+    ap.add_argument("--determinism-trials", type=int, default=1,
+                    help="re-run the oracle+verifier this many times; FAIL if the verdict is "
+                         "not stable across all runs (Reflection repeated-oracle determinism)")
     ap.add_argument("--native-arch", action="store_true",
                     help="strip the FROM --platform pin and build for the host arch "
                          "(fast off-amd64; results are arch-indicative for arch-sensitive tasks)")

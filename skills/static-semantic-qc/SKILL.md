@@ -194,6 +194,10 @@ python scripts/decontaminate.py tasks_cache --out qc_out/findings_dataset.json
 # Reflection delivery only: add the 0.90 solve/test near-dup + the diversity distribution
 python scripts/decontaminate.py tasks_cache --reflection --out qc_out/findings_dataset.json
 python scripts/check_diversity.py tasks_cache --out qc_out/findings_diversity.json
+# keyword-level clustering (client "clusters of similar tasks"): skill-fingerprint
+# clusters + scenario-word / task-name keyword concentration — both emit gate findings
+python scripts/check_task_clustering.py tasks_cache --out qc_out/findings_clustering.json
+python scripts/check_scenario_diversity.py tasks_cache --out qc_out/findings_scenario_diversity.json
 ```
 
 - **Decontamination vs public benchmarks** (`decontaminate.py`) — scores each task

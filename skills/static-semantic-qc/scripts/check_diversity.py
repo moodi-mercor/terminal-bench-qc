@@ -36,6 +36,10 @@ import re
 from collections import Counter, defaultdict
 
 from common import FAIL, WARN, PASS, finding, emit, discover_tasks, task_paths, load_toml, get
+# The REQUIRED label taxonomies (single source in check_metadata). We assess coverage
+# against the FULL required set, not just labels that happen to appear in the batch, so
+# a required objective/artifact the delivery never uses is caught (not silently absent).
+from check_metadata import TASK_OBJECTIVES, ARTIFACT_TYPES
 
 DATASET = "__dataset__"
 CAT_MAX = 0.20      # no category > 20% of tasks
@@ -158,14 +162,25 @@ def main():
         L.append(f"| {o} | {c} | {100*c/n:.1f}% |")
     L.append("")
     if big_enough:
-        under = [o for o, c in obj_cov.items() if c / n < OBJ_MIN]
-        if under:
-            findings.append(finding(DATASET, "dataset", WARN, "task-objective-under-represented",
-                                    detail=f"task_objective label(s) below the {int(OBJ_MIN*100)}% "
-                                           f"coverage floor: {sorted(under)}.",
+        # assess the FULL required taxonomy: a required objective that never appears
+        # (0 tasks) is a coverage gap just as much as one below the floor.
+        missing = sorted(o for o in TASK_OBJECTIVES if obj_cov.get(o, 0) == 0)
+        under = sorted(o for o in TASK_OBJECTIVES if 0 < obj_cov.get(o, 0) / n < OBJ_MIN)
+        if missing:
+            findings.append(finding(DATASET, "dataset", FAIL, "task-objective-missing",
+                                    detail=f"{len(missing)} required task_objective label(s) never "
+                                           f"appear in the delivery: {missing}. The diversity bar "
+                                           "requires every objective to be represented.",
                                     location="dataset",
-                                    fix="Each assigned objective label should cover ≥10% of tasks; "
-                                        "add tasks for these or drop the thin labels."))
+                                    fix="Produce tasks for each missing objective, or confirm with "
+                                        "the client that the objective is out of scope."))
+        if under:
+            findings.append(finding(DATASET, "dataset", FAIL, "task-objective-under-represented",
+                                    detail=f"task_objective label(s) below the {int(OBJ_MIN*100)}% "
+                                           f"coverage floor: {under}.",
+                                    location="dataset",
+                                    fix="Each objective label must cover >=10% of tasks; add tasks "
+                                        "for these labels."))
 
     # ---- artifact type coverage ----
     art_cov = Counter()
@@ -180,14 +195,23 @@ def main():
         L.append(f"| {a} | {c} | {100*c/n:.1f}% |")
     L.append("")
     if big_enough:
-        under = [a for a, c in art_cov.items() if c / n < ART_MIN]
-        if under:
-            findings.append(finding(DATASET, "dataset", WARN, "artifact-type-under-represented",
-                                    detail=f"artifact_type label(s) below the {int(ART_MIN*100)}% "
-                                           f"coverage floor: {sorted(under)}.",
+        missing = sorted(a for a in ARTIFACT_TYPES if art_cov.get(a, 0) == 0)
+        under = sorted(a for a in ARTIFACT_TYPES if 0 < art_cov.get(a, 0) / n < ART_MIN)
+        if missing:
+            findings.append(finding(DATASET, "dataset", FAIL, "artifact-type-missing",
+                                    detail=f"{len(missing)} required artifact_type label(s) never "
+                                           f"appear in the delivery: {missing}. The diversity bar "
+                                           "requires every artifact type to be represented.",
                                     location="dataset",
-                                    fix="Each assigned artifact label should cover ≥5% of tasks; "
-                                        "add tasks for these or drop the thin labels."))
+                                    fix="Produce tasks for each missing artifact type, or confirm "
+                                        "with the client that it is out of scope."))
+        if under:
+            findings.append(finding(DATASET, "dataset", FAIL, "artifact-type-under-represented",
+                                    detail=f"artifact_type label(s) below the {int(ART_MIN*100)}% "
+                                           f"coverage floor: {under}.",
+                                    location="dataset",
+                                    fix="Each artifact label must cover >=5% of tasks; add tasks "
+                                        "for these labels."))
 
     # ---- difficulty (avg_at_8) ----
     scored = [r["avg_at_8"] for r in rows if isinstance(r["avg_at_8"], (int, float))]

@@ -10,6 +10,9 @@ is an over-concentrated cluster to reframe.
 Usage: python check_scenario_diversity.py <tasks-dir> [--threshold 0.05] [--out clusters.json]
 """
 import argparse, json, os, re, collections
+from common import finding, emit, FAIL, WARN
+
+DATASET = "__dataset__"
 
 # generic terminal/engineering vocabulary that is NOT a distinguishing scenario word
 STOP = set("""the a an and or of to in for on with by from as is are be at it this that these those
@@ -87,7 +90,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("tasks")
     ap.add_argument("--threshold", type=float, default=0.05)
-    ap.add_argument("--out", default="scenario_clusters.json")
+    ap.add_argument("--out", default="findings_scenario_diversity.json")
+    ap.add_argument("--clusters-out", default="scenario_clusters.json",
+                    help="sidecar with the per-word task lists (for reframing the clusters)")
     args = ap.parse_args()
     n, over, per, over_names, per_name = check(args.tasks, args.threshold)
     print(f"[scenario-diversity] {n} tasks; INSTRUCTION scenario words over {args.threshold*100:.0f}%: {len(over)}")
@@ -96,13 +101,40 @@ def main():
     print(f"[name-diversity] TASK-NAME tokens over {args.threshold*100:.0f}%: {len(over_names)}")
     for w, c, frac in over_names:
         print(f"  {w:22s} {c:5d}  ({frac*100:.1f}%)")
+
+    # emit gate-able findings so the keyword-concentration signal actually enforces
+    # (was print/sidecar only, so it never reached the aggregate/gate).
+    findings = []
+    thr = int(args.threshold * 100)
+    if over:
+        words = ", ".join(f"{w} ({f*100:.0f}%)" for w, c, f in over[:10])
+        findings.append(finding(DATASET, "dataset", FAIL, "scenario-word-over-concentrated",
+                                detail=f"{len(over)} instruction scenario word(s) appear in more "
+                                       f"than {thr}% of tasks: {words}. This is the clustered-premise "
+                                       "pattern the client flagged (tasks sharing setup/premise).",
+                                location="dataset",
+                                fix="Reframe or replace the over-concentrated tasks so no single "
+                                    "scenario word dominates; see the sidecar for the task lists."))
+    if over_names:
+        words = ", ".join(f"{w} ({f*100:.0f}%)" for w, c, f in over_names[:10])
+        findings.append(finding(DATASET, "dataset", FAIL, "task-name-token-over-concentrated",
+                                detail=f"{len(over_names)} task-name token(s) appear in more than "
+                                       f"{thr}% of task names: {words}. Clustered premises leak into "
+                                       "names too; the client requires meaningful, distinct names.",
+                                location="dataset",
+                                fix="Diversify the tasks (and their names) so no token dominates."))
+    if not findings:
+        findings.append(finding(DATASET, "dataset", "PASS", "scenario-diverse",
+                                detail=f"no instruction scenario word or name token exceeds {thr}% "
+                                       f"of {n} tasks.", location="dataset"))
+    emit(findings, args.out)
     json.dump({"tasks": n, "threshold": args.threshold,
                "over_threshold": [{"word": w, "count": c, "frac": round(f, 4),
                                    "tasks": per[w]} for w, c, f in over],
                "over_threshold_names": [{"word": w, "count": c, "frac": round(f, 4),
                                          "tasks": per_name[w]} for w, c, f in over_names]},
-              open(args.out, "w"))
-    print(f"-> {args.out}")
+              open(args.clusters_out, "w"))
+    print(f"-> {args.out}  (+ clusters: {args.clusters_out})")
 
 
 if __name__ == "__main__":

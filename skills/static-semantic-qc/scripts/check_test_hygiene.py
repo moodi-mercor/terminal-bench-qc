@@ -146,14 +146,47 @@ def _helper_test_files(tests_dir):
     return out
 
 
+# base64/encoded ground-truth assignment (client flagged unused base64 `_TRUTH` blobs)
+ENC_TRUTH = re.compile(
+    r"(?i)\b\w*(?:truth|expected|golden|answer|reference|digest|checksum|payload)\w*"
+    r"\s*=\s*[rbf]?['\"]([A-Za-z0-9+/]{40,}={0,2})['\"]")
+
+
+def _encoded_ground_truth(name, root, p):
+    """Encoded ground-truth blobs anywhere under tests/ or solution/, not just in
+    test_outputs.py. Walks the whole tests/ tree (including .truth) and solution/, so it
+    fires even when tests/test_outputs.py is absent (the early-return used to skip it)."""
+    hits, hit_files = 0, []
+    for base in (p["tests"], p["solution"]):
+        if not os.path.isdir(base):
+            continue
+        for dp, _, fns in os.walk(base):
+            for fn in fns:
+                c = len(ENC_TRUTH.findall(read_text(os.path.join(dp, fn)) or ""))
+                if c:
+                    hits += c
+                    hit_files.append(os.path.relpath(os.path.join(dp, fn), root))
+    if not hits:
+        return []
+    return [finding(
+        name, "tests", WARN, "encoded-ground-truth",
+        detail=f"{hits} base64/encoded ground-truth blob(s) in {sorted(hit_files)[:5]}. "
+               "Encoded truth is opaque and un-reviewable; the client requires readable, "
+               "diffable ground truth (a plain file checked against), not base64 blobs.",
+        location=sorted(hit_files)[0],
+        fix="Store ground truth as a readable file the verifier reads and compares; "
+            "remove base64/encoded blobs from tests and solution.")]
+
+
 def check_task(name, root):
     p = task_paths(root)
+    # encoded ground truth: scan tests/ + solution/ up front, independent of test_outputs.py
+    findings = _encoded_ground_truth(name, root, p)
     src = read_text(p["test_outputs.py"])
     if not src:
-        return [finding(name, "tests", PASS, "test-hygiene-unknown",
-                        detail="no tests/test_outputs.py to inspect.", location="tests/")]
-
-    findings = []
+        return findings or [finding(name, "tests", PASS, "test-hygiene-unknown",
+                                    detail="no tests/test_outputs.py to inspect.",
+                                    location="tests/")]
     # decode base64 blobs so a wrapped `python -c` / builtin inside them is seen too,
     # but ignore the disclosed `_TRUTH` description blob (not a command).
     b64_cmds = []
@@ -176,23 +209,6 @@ def check_task(name, root):
             location="tests/test_outputs.py",
             fix="Remove the base64 wrapping; inline the logic as native Python "
                 "(or a plain subprocess call to the agent's deliverable if that's what it runs)."))
-
-    # encoded ground truth — client flagged base64 `_TRUTH` blobs (encoded expected
-    # values in tests/Oracle). Ground truth must be readable/diffable, not base64.
-    solve_src = read_text(p["solve.sh"]) or ""
-    ENC_TRUTH = re.compile(
-        r"(?i)\b\w*(?:truth|expected|golden|answer|reference|digest|checksum|payload)\w*"
-        r"\s*=\s*[rbf]?['\"]([A-Za-z0-9+/]{40,}={0,2})['\"]")
-    enc_hits = len(ENC_TRUTH.findall(src)) + len(ENC_TRUTH.findall(solve_src))
-    if enc_hits:
-        findings.append(finding(
-            name, "tests", WARN, "encoded-ground-truth",
-            detail=f"{enc_hits} base64/encoded ground-truth blob(s) in tests/solution — encoded "
-                   "truth is opaque and un-reviewable; the client requires readable, diffable "
-                   "ground truth (a plain file checked against), not base64 `_TRUTH` strings.",
-            location="tests/test_outputs.py",
-            fix="Store ground truth as a readable file (json/csv/txt) the verifier reads and "
-                "compares; remove base64/encoded blobs from tests and solve.sh."))
 
     runner_lits = _subprocess_string_literals(src)
     src_lines = src.splitlines()
