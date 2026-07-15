@@ -370,15 +370,27 @@ def check_task(name, root):
                            detail="No environment resources (cpus/memory_mb/gpus) declared.",
                            location="task.toml [environment]",
                            fix="Declare at least cpus and memory_mb."))
-    # template placeholders left at zero (the Harbor template ships cpus=0/memory_mb=0/…)
-    zero_res = [k for k, v in (("cpus", cpus), ("memory_mb", mem),
-                               ("storage_mb", storage)) if v == 0]
+    # cpus MUST be a positive number. Modal (and the Harbor runner) reject a
+    # non-positive CPU request, so the container never launches and the task silently
+    # scores 0 regardless of the solution — which surfaces to the client as a "Model
+    # Failure", not a difficulty signal. This is a hard, must-fix compliance defect.
+    if cpus is not None and cpus <= 0:
+        out.append(finding(name, "metadata", FAIL, "cpus-nonpositive",
+                           detail=f"environment.cpus={cpus} is not a positive number. The runner "
+                                  "rejects a non-positive CPU request (Modal: 'CPU request must be "
+                                  "a positive number'), so the container never starts and the task "
+                                  "scores 0 no matter what the agent does.",
+                           location="task.toml [environment] cpus",
+                           fix="Set cpus to a positive value (cpus = 1 unless the task needs more)."))
+    # other resource fields left at the template default (Harbor ships memory_mb=0/…)
+    zero_res = [k for k, v in (("memory_mb", mem), ("storage_mb", storage))
+                if v is not None and v <= 0]
     if zero_res:
         out.append(finding(name, "metadata", FAIL, "placeholder-zero-resource",
-                           detail=f"resource field(s) {zero_res} are 0 — looks like the "
+                           detail=f"resource field(s) {zero_res} are 0 or negative — looks like the "
                                   "template default was never set.",
                            location="task.toml [environment]",
-                           fix="Set real resource limits (cpus/memory_mb/storage_mb)."))
+                           fix="Set real resource limits (memory_mb/storage_mb)."))
     # MAI infra enforces ~1 CPU / 4 GB; flag tasks that quietly need more
     if cpus is not None and cpus > 1:
         out.append(finding(name, "metadata", FAIL, "cpus-above-client-cap",

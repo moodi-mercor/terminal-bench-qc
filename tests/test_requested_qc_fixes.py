@@ -317,6 +317,16 @@ class MetadataFailSeverityTests(unittest.TestCase):
         self.assertNotIn("model-not-gpt-5.4",
                          self._meta('avg_at_8 = 0.25\nmodel_tested = "GPT-5.4"\n'))
 
+    def test_cpus_zero_is_fail(self):
+        res = self._meta('avg_at_8 = 0.25\nmodel_tested = "GPT-5.4"\n'
+                         '[environment]\ncpus = 0\nmemory_mb = 2048\n')
+        self.assertEqual(res.get("cpus-nonpositive"), check_metadata.FAIL)
+
+    def test_cpus_positive_ok(self):
+        res = self._meta('avg_at_8 = 0.25\nmodel_tested = "GPT-5.4"\n'
+                         '[environment]\ncpus = 1\nmemory_mb = 2048\n')
+        self.assertNotIn("cpus-nonpositive", res)
+
 
 if __name__ == "__main__":
     unittest.main()
