@@ -91,6 +91,18 @@ class CategoryDimensionTests(unittest.TestCase):
     def test_judge_output_contract_allows_category_dimension(self):
         self.assertIn("category", judge.REVIEWER_OUT)
 
+    def test_contract_and_determinism_are_required_enforced_dimensions(self):
+        # the prompt asks for 9 dims; the enforced contract must match (else contract/
+        # determinism findings are silently optional).
+        for dim in ("contract", "determinism"):
+            self.assertIn(dim, judge.REVIEWER_DIMS)
+            self.assertIn(dim, shared_common.REVIEWER_DIMS)
+            self.assertIn(dim, judge.DIM_AREA)
+            self.assertIn(dim, shared_common.QC_DIMENSIONS)
+        for name in ("tb-task-qc-reviewer-v1.md", "tb-task-qc-reviewer-v2.md"):
+            self.assertIn("dimension: contract",
+                          (PROMPT_DIR / name).read_text(encoding="utf-8"))
+
     def test_missing_category_finding_is_flagged_incomplete(self):
         # six dims covered with evidence, category absent -> category is a gap
         findings = [{"dimension": d, "detail": "x"} for d in

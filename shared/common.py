@@ -60,6 +60,8 @@ QC_DIMENSIONS = {
     "realism":       {"area": "instructions",  "layer": "semantic",   "tool": "judge.py --role reviewer"},
     "constraints":   {"area": "tests",         "layer": "semantic",   "tool": "judge.py --role reviewer"},
     "category":      {"area": "metadata",      "layer": "semantic",   "tool": "judge.py --role reviewer"},
+    "determinism":   {"area": "tests",         "layer": "semantic",   "tool": "judge.py --role reviewer"},
+    "contract":      {"area": "instructions",  "layer": "semantic",   "tool": "judge.py --role reviewer"},
     # adversarial reward-hack red-team — judge.py --role adversary
     "cheat-vector":  {"area": "tests",         "layer": "semantic",   "tool": "judge.py --role adversary"},
     # behavioral — the ones a read cannot decide; only Modal/Docker execution answers them
@@ -69,7 +71,9 @@ QC_DIMENSIONS = {
 }
 # The read-only dimensions the reviewer sub-agent / judge.py reviewer must emit.
 # `category` = the assigned task.toml category/subcategory matches the dominant work.
-REVIEWER_DIMS = ["alignment", "coverage", "hygiene", "golden-patch", "realism", "constraints", "category"]
+# `contract` = instruction+spec define a coherent, complete, non-contradictory contract.
+REVIEWER_DIMS = ["alignment", "coverage", "hygiene", "golden-patch", "realism",
+                 "constraints", "category", "determinism", "contract"]
 
 
 def dimension_area(dim):

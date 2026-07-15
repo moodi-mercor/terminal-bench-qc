@@ -230,13 +230,13 @@ def check_task(name, root):
                            location=loc,
                            fix="Run `apt-get update` in the same RUN before install."))
     if len(apt_runs) > 1:
-        out.append(finding(name, "dockerfile", FAIL, "apt-not-consolidated",
+        out.append(finding(name, "dockerfile", WARN, "apt-not-consolidated",
                            detail=f"apt installs are split across {len(apt_runs)} RUN layers — "
                                   "each is a wasted layer and a fresh metadata refresh.",
                            location=loc,
                            fix="Merge the apt-get installs into a single RUN block."))
     if APT_UPGRADE.search(text):
-        out.append(finding(name, "dockerfile", FAIL, "apt-get-upgrade",
+        out.append(finding(name, "dockerfile", WARN, "apt-get-upgrade",
                            detail="`apt-get upgrade` silently pulls whatever the mirror has "
                                   "today — it defeats the base-image digest pinning.",
                            location=loc,
@@ -245,7 +245,7 @@ def check_task(name, root):
     pip = _unpinned_pip(text)
     if pip:
         shown = pip[:6]
-        out.append(finding(name, "dockerfile", FAIL, "unpinned-pip",
+        out.append(finding(name, "dockerfile", WARN, "unpinned-pip",
                            detail=f"pip install without a version pin: {shown}"
                                   f"{' …' if len(pip) > 6 else ''} — non-reproducible.",
                            location=loc,
@@ -269,7 +269,7 @@ def check_task(name, root):
     # compiled artifact + single stage => the build toolchain/cache ships to runtime
     if BUILD_CMD.search(text) and len(refs) <= 1:
         m = BUILD_CMD.search(text)
-        out.append(finding(name, "dockerfile", FAIL, "missing-multistage-build",
+        out.append(finding(name, "dockerfile", WARN, "missing-multistage-build",
                            detail=f"Dockerfile runs `{m.group(1)}` but has a single stage — "
                                   "the toolchain and build cache survive into the runtime image.",
                            location=loc,

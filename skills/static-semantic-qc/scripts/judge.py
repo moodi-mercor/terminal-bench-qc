@@ -49,10 +49,11 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 # Kept in sync with shared/common.py QC_DIMENSIONS (the aggregator's copy). A missing
 # dimension — or one asserted with no evidence — is injected below as a FAIL so the
 # skip surfaces in the SSOT instead of passing silently.
-REVIEWER_DIMS = ["alignment", "coverage", "hygiene", "golden-patch", "realism", "constraints", "category"]
+REVIEWER_DIMS = ["alignment", "coverage", "hygiene", "golden-patch", "realism",
+                 "constraints", "category", "determinism", "contract"]
 DIM_AREA = {"alignment": "instructions", "coverage": "tests", "hygiene": "instructions",
             "golden-patch": "solution", "realism": "instructions", "constraints": "tests",
-            "category": "metadata"}
+            "category": "metadata", "determinism": "tests", "contract": "instructions"}
 MANDATORY_CHECKS = {
     "Q1": ("coverage", "tests"),
     "Q2": ("golden-patch", "solution"),
@@ -137,6 +138,28 @@ def task_context(name, root, static_findings=None):
                          for dp, _, fns in os.walk(envdir) for fn in fns)
         parts.append("## environment/ contents (agent-visible)\n" +
                      "\n".join(listing[:200]) + "\n")
+        # Inline the CONTENT of agent-visible spec/doc files the instruction defers
+        # to (SPEC.md, CONTRACT.md, spec_sheet.txt, *.yaml, skeleton stubs). Without
+        # these the reviewer cannot cross-read instruction.md against the authoritative
+        # spec and misses instruction↔spec contradictions (the `contract` dimension).
+        SPEC_EXT = (".md", ".txt", ".rst", ".yaml", ".yml", ".cfg", ".conf", ".ini", ".toml")
+        STUB_EXT = (".py", ".c", ".h", ".cpp", ".hpp", ".go", ".rs", ".java", ".ts", ".js")
+        spec_files = []
+        for dp, _, fns in os.walk(envdir):
+            for fn in sorted(fns):
+                full = os.path.join(dp, fn)
+                rel = os.path.relpath(full, root)
+                low = fn.lower()
+                is_spec = low.endswith(SPEC_EXT)
+                # skeleton/interface source stubs are part of the written contract too,
+                # but skip large generated/data files — only inline smallish sources
+                is_stub = low.endswith(STUB_EXT) and os.path.getsize(full) <= 12000
+                if is_spec or is_stub:
+                    spec_files.append((rel, full))
+        for rel, full in spec_files[:40]:
+            body = read_text(full)
+            if body:
+                parts.append(f"## {rel} (agent-visible spec/source)\n```\n{_clip(body)}\n```\n")
     for label, path in files:
         body = read_text(path)
         if body:
@@ -150,16 +173,20 @@ def task_context(name, root, static_findings=None):
 REVIEWER_OUT = (
     "\nYou are given every file inline above — you cannot browse, so do not ask to. "
     "Apply the rubric. Output ONLY a JSON array (no prose, no markdown fence) of finding "
-    'objects: {"task","dimension":"alignment|coverage|hygiene|golden-patch|realism|constraints|category",'
+    'objects: {"task","dimension":"alignment|coverage|hygiene|golden-patch|realism|constraints|determinism|category|contract",'
     '"area":"instructions|tests|solution|metadata","severity":"PASS|WARN|FAIL",'
     '"title":"<stable defect title, e.g. brittle-string-match / untested-requirement / '
-    'weak-assertion / golden-patch-mismatch / task-realism>","location":"<file:line or \'\'>",'
+    'weak-assertion / golden-patch-mismatch / task-realism / contract-contradiction / '
+    'contract-underspecified / empty-reference-pointer / unsatisfiable-constraint>","location":"<file:line or \'\'>",'
     '"detail":"<file:line evidence>","fix":"<one line>","layer":"semantic"}. COVERAGE CONTRACT: '
-    "emit EXACTLY ONE finding for EACH of the seven dimensions (alignment, coverage, hygiene, "
-    "golden-patch, realism, constraints, category) — a PASS finding per clean dimension is REQUIRED, not "
-    "optional; a missing dimension fails the task's QC as incomplete. EVERY finding — including "
+    "emit EXACTLY ONE finding for EACH of the nine dimensions (alignment, coverage, hygiene, "
+    "golden-patch, realism, constraints, determinism, category, contract) — a PASS finding per clean "
+    "dimension is REQUIRED, not optional; a missing dimension fails the task's QC as incomplete. "
+    "For the `contract` dimension, judge the WRITTEN agent-visible contract only (instruction.md plus "
+    "every spec file it references); do NOT let a working solution/solve.sh excuse a contradiction or a "
+    "silent case. EVERY finding — including "
     "PASS — MUST have a non-empty `detail` citing the file:line you actually inspected (an empty "
-    "PASS is rejected like a skip). You may add extra findings beyond the six, never fewer. For "
+    "PASS is rejected like a skip). You may add extra findings beyond the nine, never fewer. For "
     "MANDATORY CHECK CONTRACT: answer all four mandatory checks in the relevant finding "
     "details and label them exactly `Q1:`, `Q2:`, `Q3:`, and `Q4:`. Q1 covers concrete "
     "false-accept submissions; Q2 covers oracle behavior plus written-contract correctness; "
