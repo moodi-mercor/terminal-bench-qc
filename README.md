@@ -84,6 +84,12 @@ python shared/gate.py      qc_out                 # → quarantine.txt + promote
 # Layer 3 — behavioral, only on what survived (opt-in, builds Docker):
 python skills/behavioral-qc/scripts/check_behavioral.py <tasks> \
     --only "$(paste -sd, qc_out/promote.txt)" --execute
+# verifier soundness — mutants of solve.sh must all score reward 0 (writes the
+# `mutation` behavioral signal the completeness gate requires):
+python skills/behavioral-qc/scripts/mutation_test.py <tasks> qc_out/promote.txt \
+    --generate --mutdir _local/mut --k 3
+python skills/behavioral-qc/scripts/mutation_test.py <tasks> qc_out/promote.txt \
+    --run --mutdir _local/mut --out _local/mutation_results.txt
 python shared/aggregate.py qc_out && python shared/gate.py qc_out
 
 # Layer 2 — trajectory, when a completed eval batch exists (needs RLS_KEY):

@@ -81,6 +81,13 @@ Identical clean runs of the task, Oracle, and verifier must produce the same out
 - **grade-time-randomness** (FAIL when it can flip the verdict; else note) — the verifier itself generates unseeded inputs or samples, so the same final state can pass or fail on re-run.
 - Data baked once at build time and never regenerated is fine; a fixed seed / sorted ordering / pinned timestamp is fine. Only flag drift that actually reaches a checked output or the reward.
 
+## Dimension 8 — Category label correctness  `dimension: category`
+
+Check that the `task.toml` `category`/`subcategory` (and `task_objective`/`artifact_type` when present) name the **dominant work** the task requires, not an incidental step. Read `instruction.md` + a `solution/solve.sh` excerpt, decide the main objective, and compare to the assigned labels.
+
+- **category-mislabeled** (WARN; FAIL when the assigned category is clearly not the dominant-work category, which distorts diversity/coverage accounting) — name the assigned label, the correct one, and the evidence; `subcategory` must be one listed under the chosen category.
+- Otherwise **PASS** with the dominant-work → label justification in `detail`. This is the semantic check the deterministic metadata gate cannot make (it validates the label is well-formed and in-taxonomy, not correct for this task).
+
 ## False-positive rules — apply BEFORE flagging anything
 
 1. An anti-shortcut grep *alongside* an outcome test is PASS, not a defect — read the whole test file first.

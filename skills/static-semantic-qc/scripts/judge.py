@@ -49,9 +49,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 # Kept in sync with shared/common.py QC_DIMENSIONS (the aggregator's copy). A missing
 # dimension — or one asserted with no evidence — is injected below as a FAIL so the
 # skip surfaces in the SSOT instead of passing silently.
-REVIEWER_DIMS = ["alignment", "coverage", "hygiene", "golden-patch", "realism", "constraints"]
+REVIEWER_DIMS = ["alignment", "coverage", "hygiene", "golden-patch", "realism", "constraints", "category"]
 DIM_AREA = {"alignment": "instructions", "coverage": "tests", "hygiene": "instructions",
-            "golden-patch": "solution", "realism": "instructions", "constraints": "tests"}
+            "golden-patch": "solution", "realism": "instructions", "constraints": "tests",
+            "category": "metadata"}
 MANDATORY_CHECKS = {
     "Q1": ("coverage", "tests"),
     "Q2": ("golden-patch", "solution"),
@@ -149,13 +150,13 @@ def task_context(name, root, static_findings=None):
 REVIEWER_OUT = (
     "\nYou are given every file inline above — you cannot browse, so do not ask to. "
     "Apply the rubric. Output ONLY a JSON array (no prose, no markdown fence) of finding "
-    'objects: {"task","dimension":"alignment|coverage|hygiene|golden-patch|realism|constraints",'
-    '"area":"instructions|tests|solution","severity":"PASS|WARN|FAIL",'
+    'objects: {"task","dimension":"alignment|coverage|hygiene|golden-patch|realism|constraints|category",'
+    '"area":"instructions|tests|solution|metadata","severity":"PASS|WARN|FAIL",'
     '"title":"<stable defect title, e.g. brittle-string-match / untested-requirement / '
     'weak-assertion / golden-patch-mismatch / task-realism>","location":"<file:line or \'\'>",'
     '"detail":"<file:line evidence>","fix":"<one line>","layer":"semantic"}. COVERAGE CONTRACT: '
-    "emit EXACTLY ONE finding for EACH of the six dimensions (alignment, coverage, hygiene, "
-    "golden-patch, realism, constraints) — a PASS finding per clean dimension is REQUIRED, not "
+    "emit EXACTLY ONE finding for EACH of the seven dimensions (alignment, coverage, hygiene, "
+    "golden-patch, realism, constraints, category) — a PASS finding per clean dimension is REQUIRED, not "
     "optional; a missing dimension fails the task's QC as incomplete. EVERY finding — including "
     "PASS — MUST have a non-empty `detail` citing the file:line you actually inspected (an empty "
     "PASS is rejected like a skip). You may add extra findings beyond the six, never fewer. For "

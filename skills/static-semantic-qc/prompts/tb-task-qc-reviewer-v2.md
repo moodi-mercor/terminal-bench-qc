@@ -5,7 +5,8 @@
 **Verdicts:** **PASS / WARN / FAIL** (NEUTRAL only when a file is genuinely unreadable).
 
 **READ THIS FIRST — what has already been established about this task (do not re-litigate it):**
-This delivery has already passed the objective, executable gates below. Treat their results as GROUND TRUTH — you are not re-deriving them from static reading, and "I can't statically confirm coverage" is NOT a defect:
+This delivery has already passed the objective, executable gates below. Treat their results as GROUND TRUTH — you are not re-deriving them from static reading, and "I can't statically confirm coverage" is NOT a defect.
+**Conditional on evidence:** each gate's result counts as GROUND TRUTH *only when this run actually includes its signal* (the mutation-test / oracle / no-op / conftest / determinism results attached with the task). If a gate's evidence is **absent from this run** — e.g. no mutation-testing result is provided — that assumption does **not** hold for that dimension: assess it directly from the files and, for verifier soundness, emit the `verifier-sound` dimension as unestablished rather than assuming it passed.
 1. **Verifier soundness — mutation-tested on Modal.** Deliberately-broken variants of the reference solution were run through the real verifier; **none scored reward=1**. So the verifier provably rejects plausible-but-wrong solutions. Do NOT emit `weak-assertion`/`untested-requirement` on the general suspicion that "a wrong solution might pass" — that class was tested and rejected. Only flag it if you can name a **specific, concrete** wrong solution AND cite the exact assertion it satisfies AND explain why mutation testing would have missed it (e.g. a requirement no mutant targeted).
 2. **Oracle + no-op — behaviorally gated on Modal.** `solution/solve.sh` scored **reward=1** and the empty container scored **reward=0** on a clean build. So the oracle passes its own tests and the task is non-trivial. Do NOT emit `golden-patch-mismatch` or `hardcoded-solution` on suspicion — those are disproven. `oracle-contract-violation` is still in scope (see below) but requires a concrete cited case.
 3. **Ground-truth protection — verified.** Tests run with `--noconftest`; reward path validated; conftest shadowing mitigated. Do NOT emit `agent-writable-verifier`/`candidate-derived-truth` unless you see a NEW, concrete, agent-writable path the gate would not have caught — cite it.
@@ -48,6 +49,12 @@ Note/WARN by default; FAIL only when clear-cut and material. `non-agentic` (one-
 
 ## Dimension 7 — Deterministic & self-contained execution  `dimension: determinism`
 Seed-injection/determinism already remediated → default PASS. FAIL only on a concrete residual source you cite (specific unseeded call / wall-clock compare / unsorted listing that reaches a checked output / grade-time sampling that can flip the verdict). "Partially unverifiable from static reading" is NOT a FAIL or WARN — it's a PASS, because the determinism gate already ran.
+
+## Dimension 8 — Category label correctness  `dimension: category`
+Check that the `task.toml` `category`/`subcategory` (and `task_objective`/`artifact_type` when present) name the **dominant work** the task requires — not an incidental supporting step. Read `instruction.md` + a `solution/solve.sh` excerpt, decide what the main objective is, and compare to the assigned labels.
+- **category-mislabeled** (WARN; FAIL only if the assigned category is clearly not the dominant-work category, which distorts diversity/coverage accounting) — name the assigned label, the correct one, and the evidence. `subcategory` must be one listed under the chosen category.
+- Otherwise **PASS** with the dominant-work → label justification in `detail`.
+This is the semantic check the deterministic metadata gate cannot make (it validates the label is *well-formed and in-taxonomy*, not that it is *correct for this task*).
 
 ## False-positive rules — apply BEFORE flagging
 1. An anti-shortcut grep alongside an outcome test is PASS.

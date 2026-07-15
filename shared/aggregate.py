@@ -156,9 +156,10 @@ def inject_coverage(findings, behavioral_map, require_adversary=True,
                           f"QC is incomplete — the task cannot be declared clean until it is.",
                 "fix": {"oracle-passes": "run the Modal oracle gate (modal_gate.py).",
                         "noop-fails": "run the Modal no-op gate (modal_gate.py).",
+                        "verifier-sound": "run mutation_test.py (mutants must score reward 0).",
                         "cheat-vector": "run judge.py --role adversary."}.get(
                             dim, f"run judge.py --role reviewer and cite evidence for '{dim}'."),
-                "layer": "behavioral" if dim in ("oracle-passes", "noop-fails") else "semantic"})
+                "layer": "behavioral" if dim in ("oracle-passes", "noop-fails", "verifier-sound") else "semantic"})
             n += 1
     return injected, n
 

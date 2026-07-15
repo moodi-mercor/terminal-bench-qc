@@ -59,14 +59,17 @@ QC_DIMENSIONS = {
     "golden-patch":  {"area": "solution",      "layer": "semantic",   "tool": "judge.py --role reviewer"},
     "realism":       {"area": "instructions",  "layer": "semantic",   "tool": "judge.py --role reviewer"},
     "constraints":   {"area": "tests",         "layer": "semantic",   "tool": "judge.py --role reviewer"},
+    "category":      {"area": "metadata",      "layer": "semantic",   "tool": "judge.py --role reviewer"},
     # adversarial reward-hack red-team — judge.py --role adversary
     "cheat-vector":  {"area": "tests",         "layer": "semantic",   "tool": "judge.py --role adversary"},
-    # behavioral — the two a read cannot decide; only Modal/Docker execution answers them
+    # behavioral — the ones a read cannot decide; only Modal/Docker execution answers them
     "oracle-passes": {"area": "behavioral",    "layer": "behavioral", "tool": "modal_gate.py (oracle -> reward 1)"},
     "noop-fails":    {"area": "behavioral",    "layer": "behavioral", "tool": "modal_gate.py (no-op -> reward 0)"},
+    "verifier-sound":{"area": "tests",         "layer": "behavioral", "tool": "mutation_test.py (mutants -> reward 0)"},
 }
-# The six read-only dimensions the reviewer sub-agent / judge.py reviewer must emit.
-REVIEWER_DIMS = ["alignment", "coverage", "hygiene", "golden-patch", "realism", "constraints"]
+# The read-only dimensions the reviewer sub-agent / judge.py reviewer must emit.
+# `category` = the assigned task.toml category/subcategory matches the dominant work.
+REVIEWER_DIMS = ["alignment", "coverage", "hygiene", "golden-patch", "realism", "constraints", "category"]
 
 
 def dimension_area(dim):
@@ -116,6 +119,10 @@ def coverage_gaps(task_findings, behavioral=None, require_adversary=True,
             gaps.append(("oracle-passes", "not-assessed"))
         if b.get("noop") is None:
             gaps.append(("noop-fails", "not-assessed"))
+        # verifier soundness is established by mutation testing (mutants -> reward 0),
+        # NOT by assumption: a task is incomplete until a mutation-testing signal exists.
+        if b.get("mutation") is None:
+            gaps.append(("verifier-sound", "not-assessed"))
     return gaps
 
 
