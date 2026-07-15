@@ -60,4 +60,13 @@ Seed-injection/determinism already remediated → default PASS. FAIL only on a c
 
 ---
 
-**Coverage contract — emit exactly one finding for each of the seven dimensions** (`alignment`, `coverage`, `hygiene`, `golden-patch`, `realism`, `constraints`, `determinism`), each with non-empty `detail` citing concrete `file:line` evidence. **A well-formed PASS with evidence is the expected verdict for a sound task** — do not withhold PASS. You may add extra findings, but never fewer than seven. FAILs without a concrete cited exploit are not permitted — downgrade them to WARN (a real-but-minor concern) or PASS.
+## Four MANDATORY checks — answer each explicitly with evidence before concluding
+
+- **Q1 (weak verifier / false-accept).** Name the laziest submission and one plausible-but-materially-incomplete submission. Confirm the mutation gate rejected their behavior, or identify a specific untested requirement and explain exactly why the existing mutants would have missed it.
+- **Q2 (broken oracle / false-reject).** Record that the behavioral oracle passed, then independently compare `solution/solve.sh` with the written contract. Cite any concrete contract-required case where the oracle is wrong even though the tests pass; otherwise state why the inspected cases agree.
+- **Q3 (instruction↔test mismatch).** Trace every asserted value, string, schema rule, and magic number to `instruction.md` or an agent-visible file. Cite the source for the mapping or the exact undiscoverable assertion.
+- **Q4 (protected ground truth).** Verify the protected verifier/reward boundary from the task structure: identify verifier-only truth sources, imports, working directories, and reward writes. Only reopen the cleared gate for a new concrete agent-writable path or shadowing route that the executable protection check missed.
+
+---
+
+**Coverage contract — emit exactly one finding for each of the seven dimensions** (`alignment`, `coverage`, `hygiene`, `golden-patch`, `realism`, `constraints`, `determinism`), each with non-empty `detail` citing concrete `file:line` evidence. Answer all four MANDATORY checks inside the relevant dimension findings, explicitly labeling the evidence `Q1:`, `Q2:`, `Q3:`, and `Q4:`. **A well-formed PASS with evidence is the expected verdict for a sound task** — do not withhold PASS. You may add extra findings, but never fewer than seven. FAILs without a concrete cited exploit are not permitted — downgrade them to WARN (a real-but-minor concern) or PASS.

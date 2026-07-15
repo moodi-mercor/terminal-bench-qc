@@ -52,6 +52,12 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REVIEWER_DIMS = ["alignment", "coverage", "hygiene", "golden-patch", "realism", "constraints"]
 DIM_AREA = {"alignment": "instructions", "coverage": "tests", "hygiene": "instructions",
             "golden-patch": "solution", "realism": "instructions", "constraints": "tests"}
+MANDATORY_CHECKS = {
+    "Q1": ("coverage", "tests"),
+    "Q2": ("golden-patch", "solution"),
+    "Q3": ("alignment", "instructions"),
+    "Q4": ("coverage", "tests"),
+}
 
 
 def coverage_gaps(findings):
@@ -67,6 +73,16 @@ def coverage_gaps(findings):
             no_evidence.add(dim)
     return [(d, "asserted-without-evidence" if d in no_evidence else "not-assessed")
             for d in REVIEWER_DIMS if d not in covered]
+
+
+def mandatory_check_gaps(findings):
+    """Mandatory Q1-Q4 checks not explicitly evidenced in reviewer details."""
+    assessed = set()
+    for f in findings:
+        detail = f.get("detail") or ""
+        assessed.update(re.findall(r"\b(Q[1-4])\s*:", detail, flags=re.IGNORECASE))
+    assessed = {q.upper() for q in assessed}
+    return [q for q in MANDATORY_CHECKS if q not in assessed]
 
 
 # ----------------------------------------------------------------- auth -----
@@ -143,7 +159,12 @@ REVIEWER_OUT = (
     "optional; a missing dimension fails the task's QC as incomplete. EVERY finding — including "
     "PASS — MUST have a non-empty `detail` citing the file:line you actually inspected (an empty "
     "PASS is rejected like a skip). You may add extra findings beyond the six, never fewer. For "
-    "any item under STATIC FINDINGS you judge a false positive, also emit "
+    "MANDATORY CHECK CONTRACT: answer all four mandatory checks in the relevant finding "
+    "details and label them exactly `Q1:`, `Q2:`, `Q3:`, and `Q4:`. Q1 covers concrete "
+    "false-accept submissions; Q2 covers oracle behavior plus written-contract correctness; "
+    "Q3 covers instruction-to-assertion discoverability; Q4 covers protected ground truth and "
+    "agent influence over grading. Omitting any label fails QC as incomplete. For any item "
+    "under STATIC FINDINGS you judge a false positive, also emit "
     '{"task","area":<same>,"severity":"PASS","title":"verify-refuted","ref":"<static title>",'
     '"detail":"why it is a false positive","layer":"semantic"}; if you confirm it, use '
     'title "verify-confirm". Presume the task is correct; only FAIL on concrete, cited evidence.'
@@ -335,6 +356,15 @@ def main():
                     "detail": f"reviewer produced no evidence-backed finding for dimension "
                               f"'{dim}' ({reason}); QC is incomplete until it is assessed.",
                     "fix": f"re-run the reviewer and cite file:line evidence for '{dim}'.",
+                    "layer": "semantic"})
+            for check in mandatory_check_gaps(findings):
+                dim, area = MANDATORY_CHECKS[check]
+                findings.append({
+                    "task": name, "dimension": dim, "area": area, "severity": "FAIL",
+                    "title": "mandatory-check-not-assessed", "location": "",
+                    "detail": f"reviewer did not explicitly provide evidence labeled "
+                              f"'{check}:'; all four mandatory checks are required.",
+                    "fix": f"re-run the reviewer and include concrete file:line evidence for {check}.",
                     "layer": "semantic"})
         prefix = "sem" if role == "reviewer" else "adv"
         emit(findings, os.path.join(args.out_dir, f"{prefix}_{name}.json"))

@@ -9,7 +9,7 @@ need judgment for — so they're caught cheaply on every task:
   - instruction-placeholder   leftover TODO/FIXME/lorem-ipsum/<PLACEHOLDER>/"your
                               answer here" — the task was shipped half-written
   - instruction-too-short     almost no prompt (likely underspecified)
-  - instruction-too-long      over ~1500 tokens (FAIL — Reflection caps instruction length)
+  - instruction-too-long      1500+ o200k_base tokens (FAIL — Reflection requires <1500)
   - instruction-relative-path explicit ./ or ../ path the agent must use (Reflection
                               requires absolute paths for files the agent reads/writes)
   - prescriptive-instruction  "spec-sheet" smells — dictated function signatures,
@@ -39,6 +39,8 @@ import argparse
 import os
 import re
 
+import tiktoken
+
 from common import WARN, FAIL, PASS, finding, emit, read_text, discover_tasks, task_paths
 
 PLACEHOLDER = re.compile(
@@ -48,9 +50,11 @@ PLACEHOLDER = re.compile(
 # minimum "real" instruction length (chars, after stripping code fences/whitespace).
 # Public TB instructions run 80-2000+ chars; <120 is almost always underspecified.
 MIN_CHARS = 120
-# Reflection caps instructions at ~1500 tokens. Estimate tokens ~ chars/4 over the
-# WHOLE file (code fences included — they count toward the agent's context too).
+# Reflection requires instructions to stay under 1500 tokens. o200k_base is a
+# deterministic tiktoken proxy for this gate; it is not the exact Qwen tokenizer.
+# Count the WHOLE file (code fences included — they consume context too).
 MAX_TOKENS = 1500
+TOKEN_ENCODING = tiktoken.get_encoding("o200k_base")
 # explicit relative paths the agent is told to use (Reflection wants absolute paths).
 # Match ./foo or ../foo path tokens; ignore bare ./ and markdown link fragments.
 REL_PATH = re.compile(r"(?<![\w./])\.\.?/[\w./-]*\w")
@@ -107,8 +111,8 @@ def _visible_len(text):
     return len(re.sub(r"\s+", " ", t).strip())
 
 
-def _est_tokens(text):
-    return len(text) // 4
+def _count_tokens(text):
+    return len(TOKEN_ENCODING.encode(text))
 
 
 def _prescriptive_signals(text):
@@ -178,11 +182,12 @@ def check_task(name, root):
                            location=loc,
                            fix="State the concrete deliverable, inputs, and success criteria."))
 
-    toks = _est_tokens(text)
-    if toks > MAX_TOKENS:
+    toks = _count_tokens(text)
+    if toks >= MAX_TOKENS:
         out.append(finding(name, "instructions", FAIL, "instruction-too-long",
-                           detail=f"instruction.md is ~{toks} tokens (> {MAX_TOKENS}) — "
-                                  "Reflection caps instruction length; concise prompts that "
+                           detail=f"instruction.md is {toks} o200k_base tokens "
+                                  f"(required: < {MAX_TOKENS}) — Reflection caps instruction "
+                                  "length; concise prompts that "
                                   "encourage exploration are required, not long, over-specified ones.",
                            location=loc,
                            fix="Trim backstory/filler and step-by-step recipes; state what "
