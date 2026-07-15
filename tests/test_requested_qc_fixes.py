@@ -138,5 +138,28 @@ class DocumentedWorkflowTests(unittest.TestCase):
         self.assertIn("verifier-sound", text)
 
 
+import check_structure  # noqa: E402
+
+
+class ReflectionNameExemptionTests(unittest.TestCase):
+    """Reflection deliveries use opaque `task_<hex>` names by design — the kebab-case
+    convention must not false-flag them (matches the Reflection spec)."""
+
+    def _name_findings(self, task_name, toml_body):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "task.toml").write_text(toml_body, encoding="utf-8")
+            (root / "instruction.md").write_text("do the thing", encoding="utf-8")
+            return {f["title"] for f in check_structure.check_task(task_name, root)}
+
+    def test_opaque_name_exempt_for_reflection_task(self):
+        toml = '[metadata]\ncategory = "x"\ntask_objective = ["implement_feature"]\n'
+        self.assertNotIn("task-name-not-kebab", self._name_findings("task_a1b2c3d4", toml))
+
+    def test_non_kebab_name_still_flagged_for_tb2_task(self):
+        toml = '[metadata]\ndifficulty = "medium"\ncategory = "x"\n'
+        self.assertIn("task-name-not-kebab", self._name_findings("Task_NotKebab", toml))
+
+
 if __name__ == "__main__":
     unittest.main()

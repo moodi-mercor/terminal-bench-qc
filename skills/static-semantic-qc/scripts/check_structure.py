@@ -16,7 +16,7 @@ import re
 import subprocess
 
 from common import (FAIL, WARN, PASS, finding, emit, read_text,
-                    discover_tasks, task_paths)
+                    discover_tasks, task_paths, load_toml, is_reflection_schema)
 
 # lowercase kebab-case, 1+ segments (TB/Harbor task-name convention)
 KEBAB = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -51,6 +51,8 @@ RECOMMENDED = [
 def check_task(name, root):
     out = []
     p = task_paths(root)
+    meta = load_toml(p["task.toml"]) if os.path.isfile(p["task.toml"]) else {}
+    reflection = is_reflection_schema(meta)
 
     for key, sev, label in REQUIRED:
         path = p[key]
@@ -97,7 +99,9 @@ def check_task(name, root):
                 fix="If the task needs packages/data, add the required RUN/COPY steps."))
 
     # ---- package identity / hygiene ----
-    if name and not KEBAB.match(name):
+    # Reflection deliveries use opaque `task_<hex>` names by design — that is spec-
+    # compliant, so the kebab-case convention only applies to TB2/OTS-shaped tasks.
+    if name and not KEBAB.match(name) and not reflection:
         out.append(finding(
             name, "structure", FAIL, "task-name-not-kebab",
             detail=f"task name `{name}` is not lowercase kebab-case.",
