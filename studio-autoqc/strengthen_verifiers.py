@@ -20,23 +20,30 @@ HERE=os.path.dirname(os.path.abspath(__file__)); sys.path[:0]=[HERE]
 lock=threading.Lock()
 
 GEN_SYS=(
- "You STRENGTHEN a Terminal-Bench pytest verifier. You are given instruction.md, the current "
- "tests/test_outputs.py, and one or more MUTANT solutions that WRONGLY PASS the verifier — each "
- "mutant is a plausible-but-wrong solution that violates a stated requirement the verifier failed "
- "to check. Add the MINIMUM assertions so every mutant now FAILS, while a CORRECT solution still "
- "passes.\n"
+ "You STRENGTHEN a Terminal-Bench pytest verifier. Inputs: instruction.md, the REFERENCE "
+ "solution (solution/solve.sh — the KNOWN-CORRECT oracle), the current tests/test_outputs.py, and "
+ "one or more MUTANT solutions that WRONGLY PASS the verifier — each mutant is a plausible-but-wrong "
+ "solution that violates a stated requirement the verifier failed to check.\n"
+ "METHOD (do this reasoning before writing code):\n"
+ "A. For each mutant, TRACE it against the reference solution on the task's real inputs and find "
+ "the FIRST concrete, observable value where the mutant's produced artifact/state/output DIFFERS "
+ "from the correct one (a specific record, field, count, ordering, byte, checksum, file). Name it.\n"
+ "B. Write an assertion that pins THAT exact value, recomputed independently from the real inputs "
+ "(or read from the reference-produced artifact if the harness runs solve.sh first) — so the mutant "
+ "fails and the reference passes. Prefer a differential/recompute check over a coarse property.\n"
+ "C. Sanity-check against over-tightening: the REFERENCE solve.sh's output MUST satisfy your "
+ "assertion. If you cannot prove the reference satisfies it, you picked the wrong property — pick "
+ "the concrete value the mutant demonstrably gets wrong instead. This is the #1 past failure.\n"
  "HARD REQUIREMENTS:\n"
- "1. Keep every existing test_ function name; you may add assertions inside them or add new "
- "test_ functions. Do NOT delete or weaken existing checks.\n"
- "2. Each added assertion must target the specific violated requirement (given per mutant), and "
- "must check the PRODUCED ARTIFACT/OUTPUT (state, files, records), independently derived — not the "
- "method the solution used. Recompute expected values from the real inputs; never trust agent output.\n"
- "3. A correct reference solution MUST still pass. Do not assert on incidental/implementation "
- "details a valid alternative solution could legitimately differ on.\n"
- "4. Read fixtures/inputs from their existing paths. No network, no pip/apt install, no new "
- "subprocess to a /tests/.truth script, no reference to files that don't exist.\n"
- "5. You MUST reproduce every existing test_ function verbatim and ADD to them; emitting fewer "
- "test_ functions than the original is a failure. Output must be valid, compilable Python.\n"
+ "1. Keep every existing test_ function verbatim; ADD assertions inside them or add new test_ "
+ "functions. Never delete or weaken an existing check.\n"
+ "2. Assertions check the PRODUCED ARTIFACT/OUTPUT, independently derived — never trust agent method.\n"
+ "3. A correct reference solution MUST still pass; do not assert incidental details a valid "
+ "alternative solution could legitimately differ on.\n"
+ "4. Read fixtures/inputs from existing paths only. No network, no pip/apt install, no subprocess "
+ "to a /tests/.truth script, no reference to files that don't exist.\n"
+ "5. Reproduce every existing test_ function; fewer test_ functions than the original is a failure. "
+ "Output must be valid, compilable Python.\n"
  "Output ONLY the complete new tests/test_outputs.py inside one ```python fenced block.")
 
 RETRY_NOTE=(
@@ -56,7 +63,8 @@ def load_weak(results):
     out=[]
     for l in open(results):
         r=json.loads(l)
-        if r.get("survived",0)>0: out.append(r)
+        _sv=r.get("survived",0); _n=len(_sv) if isinstance(_sv,list) else _sv
+        if _n>0: out.append(r)
     return out
 
 # ---------------------------------------------------------------- generate --
@@ -65,10 +73,12 @@ def gen_one(key, model, tdir, task, mutdir):
     instr=fl.readfile(os.path.join(tdir,"instruction.md")) or ""
     to=fl.readfile(os.path.join(tdir,"tests","test_outputs.py")) or ""
     if not to: return task,None,"no-verifier"
+    solve=fl.readfile(os.path.join(tdir,"solution","solve.sh")) or ""
     od=os.path.join(mutdir,task)
     meta=json.load(open(os.path.join(od,"mutants.json"))) if os.path.exists(os.path.join(od,"mutants.json")) else []
     idxs=gen_one._idx.get(task) or [m["i"] for m in meta]
     parts=[f"===== instruction.md =====\n{instr[:6000]}",
+           f"===== solution/solve.sh (REFERENCE — known-correct oracle) =====\n{solve[:6000]}",
            f"===== tests/test_outputs.py (CURRENT — too weak) =====\n{to[:16000]}"]
     for m in meta:
         if m["i"] not in idxs: continue

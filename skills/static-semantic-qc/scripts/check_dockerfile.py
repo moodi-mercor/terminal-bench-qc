@@ -100,12 +100,27 @@ def _logical_lines(text):
     return out
 
 
+_AS_RE = re.compile(r"^\s*FROM\s+.*?\bAS\s+(\S+)", re.I)
+
+
 def _from_refs(text):
+    """Real base-image refs only. In a multi-stage build, `FROM <stage>` lines that
+    reference a stage declared earlier via `... AS <stage>` are NOT base images — they
+    reuse an in-Dockerfile stage — so they must not be checked for pinning/approval."""
+    lines = _logical_lines(text)
+    stages = set()
+    for ll in lines:
+        m = _AS_RE.match(ll)
+        if m:
+            stages.add(m.group(1).strip().lower())
     refs = []
-    for ll in _logical_lines(text):
+    for ll in lines:
         m = FROM_RE.match(ll)
         if m:
-            refs.append(m.group(1))
+            ref = m.group(1)
+            if ref.strip().lower() in stages:
+                continue  # reference to a prior build stage, not a base image
+            refs.append(ref)
     return refs
 
 
