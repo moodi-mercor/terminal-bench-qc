@@ -391,10 +391,10 @@ def check_task(name, root):
                                   "template default was never set.",
                            location="task.toml [environment]",
                            fix="Set real resource limits (memory_mb/storage_mb)."))
-    # MAI infra enforces ~1 CPU / 4 GB; flag tasks that quietly need more
+    # some client infra enforces ~1 CPU / 4 GB; flag tasks that quietly need more
     if cpus is not None and cpus > 1:
         out.append(finding(name, "metadata", FAIL, "cpus-above-client-cap",
-                           detail=f"cpus={cpus}: clients (e.g. MAI) enforce ~1 CPU; "
+                           detail=f"cpus={cpus}: some clients enforce ~1 CPU; "
                                   "task may pass on Modal but fail under client caps.",
                            location="task.toml [environment]",
                            fix="Confirm the task runs within ~1 CPU / 4 GB, or flag the requirement."))
@@ -425,6 +425,12 @@ def check_task(name, root):
     allow_net = get(d, "environment.allow_internet")
     if allow_net is False:
         instr = read_text(p["instruction.md"]).lower()
+        # Loopback URLs (localhost / 127.0.0.1 / 0.0.0.0 / [::1]) are LOCAL services, not the
+        # internet; editable/local installs (`pip install -e`) are offline. Strip both before
+        # testing, so a task that runs a local server or installs its own package is not
+        # mis-flagged as needing the network. (check-bug fix: these were the dominant FP.)
+        instr = re.sub(r"https?://(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]|::1)\S*", " ", instr)
+        instr = re.sub(r"\bpip[0-9]?\s+install\s+-e\b", " ", instr)
         NEEDS_NET = re.compile(r"(https?://|\bdownload\b|\bfetch\b.{0,20}\b(url|http|remote)|"
                                r"hugging\s?face|from the internet|\bpip install\b.*\b(from|http))", re.I)
         if NEEDS_NET.search(instr):

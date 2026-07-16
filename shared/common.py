@@ -57,32 +57,104 @@ def worst(severities):
 #     than silently passing until someone remembers to allowlist it.
 # So a FAIL blocks UNLESS its title is in ADVISORY_FAIL below. WARN/PASS never block.
 #
-# ADVISORY_FAIL = FAIL classes the client explicitly tolerates AND that cannot affect
-# grading integrity, difficulty, reproducibility, or leakage — purely cosmetic. Anything
-# that could touch those (leftover-generator, uncleaned-setup-script, cpus-nonpositive,
-# category mismatch, unpinned base image, weak/absent assertions, contract defects, ...)
-# is NOT here and therefore blocks. Note: split-apt (`apt-not-consolidated`), unpinned-pip
-# (`unpinned-pip`) and `oracle-runtime-install` are already emitted as WARN by their
-# checks, so they never block and don't need listing. Keep this set in exact sync with the
-# delivery run so results are reproducible across whoever runs the skill.
+# ADVISORY_FAIL = FAIL classes that do NOT block on their own. Two rationales, both
+# aligned with how the pipeline actually runs — the runtime gates, not a static read, are
+# the authority on build/portability:
+#   (a) client-tolerated cosmetic authoring style (heredoc, solve length, bash-vs-native,
+#       packaging residue, non-grading metadata gaps).
+#   (b) BUILD / PORTABILITY hygiene. Whether the image actually builds and the oracle/no-op
+#       actually run is PROVEN by check_behavioral (build-fails / oracle-fails /
+#       no-op-passes — all blocking). The static apt/chmod/daemon/entrypoint-style
+#       heuristics are advisory nudges, not delivery blockers; if they cause real breakage
+#       the behavioral gate catches it. Genuine infra-CONFIG breakage a build can't reveal
+#       stays blocking and is NOT listed here: cpus=0 (`cpus-nonpositive` / -zero-resource
+#       -> Modal rejects the container), base image not digest-pinned/approved (spec-hard
+#       FROM rule), ENTRYPOINT reliance (`dockerfile-entrypoint` / `cmd-entrypoint-reliance`
+#       -> client infra overrides startup).
+# Anything touching grading integrity, difficulty, determinism, infra-config, or a
+# CONFIRMED leak is NOT here and blocks. split-apt (`apt-not-consolidated`), `unpinned-pip`
+# and `oracle-runtime-install` are already WARN from their checks. Keep in exact sync with
+# the delivery run so results are reproducible across whoever runs the skill.
 ADVISORY_FAIL = {
-    # solve.sh / Dockerfile authoring style the client waved through (heredoc, length,
-    # bash+python mix) — no effect on what is graded.
+    # (a) cosmetic authoring style
     "solve-embedded-heredoc", "dockerfile-heredoc-source",
-    "solve-too-long", "mixed-bash-python-solve",
-    # a shell builtin used where native Python would do (client: "bash-native") — style.
-    "bash-op-doable-natively",
-    # cosmetic packaging residue — no grading/leakage impact.
+    "solve-too-long", "mixed-bash-python-solve", "bash-op-doable-natively",
     "missing-dockerignore", "pycache-residue-after-script-removal",
-    # metadata completeness gaps that do not affect grading or difficulty.
     "missing-tags", "missing-junior-time",
+    # (b) build hygiene (Dockerfile authoring; real breakage caught by the build gate)
+    "apt-no-update", "broad-chmod", "archive-fixture-not-extracted",
+    "test-deps-in-image", "add-remote-url", "curl-pipe-sh",
+    # (b) environment hygiene (leftover/uncleaned files, bakeable installs, stray files) —
+    # env authoring, not grading; a real answer-leak is caught by the leak checks/adversary,
+    # a real offline-break by the behavioral gate.
+    "leftover-generator", "uncleaned-setup-script", "bakeable-runtime-install",
+    "unnecessary-files",
+    # (b) portability hygiene (solve/runtime authoring; real breakage caught by oracle/no-op)
+    "backgrounded-daemon-no-redirect", "pip-no-break-system-packages",
+    "redis-no-daemonize", "broad-pkill", "config-edit-no-restart",
+    "server-defined-not-started", "verifier-unbounded-call", "systemd-assumption",
+    # (a) instruction authoring hygiene — real gaps surface in the semantic reviewer's
+    # alignment/contract dimensions (which block); the static heuristics are nudges.
+    "structured-output-undocumented", "instruction-relative-path", "prescriptive-instruction",
+    # (a) test authoring hygiene — encoded/shelled-out test steps are readability nudges
+    # (client "readable tests"), not grading defects; the check still surfaces them as WARN.
+    "shell-wrapped-python", "base64-wrapped-command",
+}
+
+# ADVERSARY_GATED = FP-prone static LEAK + WEAK-VERIFIER heuristics — a static read cannot
+# tell a real defect from a benign pattern here, so these are CANDIDATES, not verdicts.
+# They block ONLY when the adversary/skeptic CONFIRMS them (`verify-confirm`); unconfirmed,
+# aggregate.reconcile down-grades FAIL->WARN — the same candidate→confirm pattern already
+# used for `agent-writable-verifier` / `semantic-cheat-vector`. The authoritative signals
+# for what these approximate are the SEMANTIC reviewer (its own FAILs block) and the
+# BEHAVIORAL gate (mutation / no-op-passes / --determinism-trials -> nondeterministic-oracle,
+# all blocking) — so a REAL defect still blocks; a static-only false alarm does not.
+#   * leak reads/bakes: a comment-mentioned `.truth`, a build-baked fixture regenerated at
+#     runtime, a verifier reading an INPUT it is allowed to.
+#   * weak verifier: existence-only / no-assertion / vacuous readings over-fire; power is
+#     confirmed by mutation testing at runtime.
+#   * verifier determinism: static wall-clock/RNG heuristics; real drift is proven by
+#     --determinism-trials (nondeterministic-oracle, which stays blocking).
+# These block outright (NOT gated) — deterministic and not FP-prone: reward-gaming
+# (unconditional-reward, reward-pre-created, test-sh-swallows-failure, test-sh-set-e-reward-
+# abort, reward-path-nonstandard, conftest-plant-vulnerable, test-runtime-install),
+# llm-judge-in-verifier (subjective grading), dangling-truth-reference (broken verifier),
+# plus all infra-config, behavioral-runtime, and semantic FAILs.
+# NOTE: dockerfile-copies-* / secret-baked-in-image / obfuscated-payload / hidden-unicode /
+# prompt-injection ARE gated — the delivery triage found them all FP (agent-facing smoke
+# fixtures, test crypto keys, build-time fixture-data encoding, Unicode-analysis test data,
+# security-task fixture content), so a static hit is a candidate the adversary confirms.
+ADVERSARY_GATED = {
+    # leak reads/bakes
+    "truth-baked-verifier-reads", "truth-named-baked",
+    "tests-bake-verifier-reads", "tests-bake-unread", "tests-bake-removed",
+    "verifier-reads-instruction-input", "verifier-reads-config-spec",
+    "reference-solve-reads-truth", "reference-reads-instruction-input",
+    "delegates-to-truth-verifier", "verifier-helper-in-environment",
+    # image/file leak heuristics — triage: agent-facing smoke fixtures, not answer leaks
+    "dockerfile-copies-solution", "dockerfile-copies-tests",
+    "dockerfile-copies-env-tests", "dockerfile-copies-hint-file",
+    "test-imports-solution", "secret-baked-in-image",
+    # security heuristics — triage: fixture/test data for security-analysis tasks
+    "obfuscated-payload", "hidden-unicode", "prompt-injection",
+    # weak / low-power verifier heuristics (power confirmed by mutation testing)
+    "existence-only-check", "no-assertion-test", "vacuous-test", "swallowed-assertion",
+    "empty-parametrize", "skipped-scored-test", "source-match-verification",
+    "literal-only-verifier", "verifier-self-consistent", "degenerate-integrity-guard",
+    "filename-encodes-answer", "verifier-undefended", "fragmented-test-helpers",
+    # agent-writable (candidate; confirmed by adversary / behavioral reward-signal-gameable)
+    "agent-writable-verifier", "agent-writable-reward-signal",
+    # verifier-determinism heuristics (real drift proven by behavioral --determinism-trials)
+    "unseeded-randomness-in-verifier", "wall-clock-in-verifier", "wall-clock-dependent-verifier",
 }
 
 
 def is_blocking(finding):
     """A FAIL blocks acceptance UNLESS its title is an explicitly-tolerated advisory
     hygiene class (ADVISORY_FAIL). WARN/PASS never block. Blocking-by-default is required
-    because the semantic reviewer emits open-vocabulary titles no allowlist could cover."""
+    because the semantic reviewer emits open-vocabulary titles no allowlist could cover.
+    (FP-prone static leak heuristics are down-graded FAIL->WARN in aggregate.reconcile
+    unless the adversary confirms them, so they reach here as WARN when unconfirmed.)"""
     return (finding.get("severity") == FAIL
             and finding.get("title") not in ADVISORY_FAIL)
 

@@ -43,10 +43,18 @@ import tiktoken
 
 from common import WARN, FAIL, PASS, finding, emit, read_text, discover_tasks, task_paths
 
-PLACEHOLDER = re.compile(
-    r"(\bTODO\b|\bFIXME\b|\bXXX\b|lorem ipsum|your answer here|fill (?:this |in)|"
-    r"<\s*placeholder\s*>|\bplaceholder\b|tbd\b|\[insert |coming soon|"
+# HARD markers are never legitimate task language — always a half-written instruction.
+PLACEHOLDER_HARD = re.compile(
+    r"(lorem ipsum|your answer here|<\s*placeholder\s*>|\[insert |coming soon|"
     r"<\s*(?:your|the)[^>]{0,30}>)", re.I)
+# SOFT markers (TODO/FIXME/"fill in"/stub/placeholder) are a defect ONLY as a leftover
+# template marker — NOT when completing them IS the task ("implement the stub functions",
+# "resolve the TODOs marked in the code"). Gated by TASK_WORK context below. (check-bug fix.)
+PLACEHOLDER_SOFT = re.compile(
+    r"(\bTODO\b|\bFIXME\b|\bXXX\b|fill (?:this |in)|\bplaceholder\b|\btbd\b)", re.I)
+TASK_WORK = re.compile(
+    r"\b(stub|implement|complete|resolve|finish|fix|function|method|class|marked|marker|"
+    r"in the (?:code|source|file|repo|module|script)|each (?:function|method))\b", re.I)
 # minimum "real" instruction length (chars, after stripping code fences/whitespace).
 # Public TB instructions run 80-2000+ chars; <120 is almost always underspecified.
 MIN_CHARS = 120
@@ -166,7 +174,14 @@ def check_task(name, root):
                         location=loc,
                         fix="Write the task instruction (what success looks like).")]
 
-    m = PLACEHOLDER.search(text)
+    m = PLACEHOLDER_HARD.search(text)
+    if not m:
+        # a soft marker is a defect only if it is NOT describing the agent's task
+        for sm in PLACEHOLDER_SOFT.finditer(text):
+            lo, hi = max(0, sm.start() - 80), min(len(text), sm.end() + 80)
+            if not TASK_WORK.search(text[lo:hi]):
+                m = sm
+                break
     if m:
         out.append(finding(name, "instructions", FAIL, "instruction-placeholder",
                            detail=f"instruction.md contains a placeholder/marker "

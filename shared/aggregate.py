@@ -22,7 +22,7 @@ import os
 from collections import Counter, defaultdict
 
 from common import (PASS, WARN, FAIL, AREAS, worst, layer_of, is_blocking,
-                    REVIEWER_DIMS, coverage_gaps, dimension_area)
+                    REVIEWER_DIMS, coverage_gaps, dimension_area, ADVERSARY_GATED)
 
 # columns shown in the CSV, one per finding area, grouped by QC layer:
 #   Layer 1 static (deterministic): structure, metadata, dockerfile, anti_cheat, dataset
@@ -64,6 +64,10 @@ def reconcile(findings):
     """
     refuted = {(f["task"], f["ref"]) for f in findings
                if f.get("title") == "verify-refuted" and f.get("ref")}
+    # A skeptic can also CONFIRM a static finding (verify-confirm, ref=<static title>).
+    # Used to keep FP-prone static leak heuristics blocking only when confirmed.
+    confirmed = {(f["task"], f["ref"]) for f in findings
+                 if f.get("title") == "verify-confirm" and f.get("ref")}
     # A read-only SKEPTIC confirms/refutes each adversarial cheat-vector candidate
     # (the precision filter for Part 3). Its verdicts decide the cheat-vector's fate.
     cv_confirmed = {f["task"] for f in findings if f.get("title") == "cheat-vector-confirmed"}
@@ -106,6 +110,25 @@ def reconcile(findings):
                  "detail": (f.get("detail", "") + " [reconcile: verifier has an "
                             "independent anti-cheat defense (verifier-defended) the agent "
                             "cannot forge — down-graded FAIL->WARN; confirm at runtime.]")}
+            out.append(f)
+            continue
+        # FP-prone static LEAK or WEAK-VERIFIER heuristic (truth-baked / verifier-reads-* /
+        # existence-only / no-assertion / vacuous / agent-writable / wall-clock-in-verifier
+        # ...): the static PATTERN is a CANDIDATE, not a verdict — a read can't tell a real
+        # leak/weak-grader from a benign one (comment-mentioned .truth, build-baked fixture
+        # regenerated at runtime, a verifier reading an allowed INPUT, a check whose power
+        # only mutation testing can confirm). Gate behind the adversary: confirmed
+        # (verify-confirm) -> keep FAIL (blocks); unconfirmed -> down-grade FAIL->WARN
+        # candidate for the semantic/behavioral gate. (verify-refuted already dropped it
+        # above.) Deterministic leaks/reward-gaming — dockerfile-copies-*, secret-baked,
+        # test-imports-solution, unconditional-reward, ... — are NOT gated; they stay FAIL.
+        if (f.get("title") in ADVERSARY_GATED and f.get("severity") == FAIL
+                and (f["task"], f.get("title")) not in confirmed):
+            f = {**f, "severity": WARN,
+                 "detail": (f.get("detail", "") + " [reconcile: FP-prone static "
+                            "leak/weak-verifier heuristic unconfirmed by adversary — "
+                            "down-graded FAIL->WARN candidate; confirm via verify-confirm, "
+                            "the semantic reviewer, or the behavioral gate.]")}
             out.append(f)
             continue
         # An ANALYTICAL adversarial cheat-vector is a CANDIDATE, not a verdict:
