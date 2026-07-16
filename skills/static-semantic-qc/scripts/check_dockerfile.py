@@ -42,7 +42,7 @@ from common import (FAIL, WARN, PASS, finding, emit, read_text, discover_tasks,
                     task_paths, load_toml, is_reflection_schema)
 
 FROM_RE = re.compile(r"^\s*FROM\s+(?:--platform=\S+\s+)?(\S+)", re.I | re.M)
-PIP_RE = re.compile(r"\bpip3?\s+install\b([^\n&|]*)", re.I)
+PIP_RE = re.compile(r"(?:\bpip3?|\buv\s+pip)\s+install\b([^\n&|]*)", re.I)
 APT_INSTALL = re.compile(r"\b(?:apt-get|apt)\s+(?:-y\s+)?install\b", re.I)
 APT_UPDATE = re.compile(r"\b(?:apt-get|apt)\s+update\b", re.I)
 APT_UPGRADE = re.compile(r"\b(?:apt-get|apt)\s+(?:-y\s+)?(?:dist-)?upgrade\b", re.I)
@@ -147,14 +147,62 @@ def _run_blocks(text):
     return blocks
 
 
+# pip flags that TAKE AN ARGUMENT — the following token is a file/dir, not a package
+# (`-r requirements.txt`, `-c constraints.txt`, `-e .`), so skip it too.
+_PIP_ARG_FLAGS = {"-r", "--requirement", "-c", "--constraint", "-e", "--editable"}
+# installer bootstrap: pinning these is atypical and not what the spec's "pinned
+# dependencies" targets; `pip install -U pip setuptools wheel` is a standard prelude.
+_PIP_BOOTSTRAP = {"pip", "pip3", "setuptools", "wheel", "uv"}
+
+
+def _command_text(text):
+    """Real instruction text only: Dockerfile comment lines and heredoc bodies removed,
+    backslash-continuations folded. A `pip install ...` mentioned in a comment or heredoc
+    is NOT a command and must not be scanned."""
+    kept = [ln for ln in _strip_heredocs(text).split("\n")
+            if not ln.lstrip().startswith("#")]
+    out, buf = [], ""
+    for ln in kept:
+        cur = buf + ln
+        if cur.rstrip().endswith("\\"):
+            buf = cur.rstrip()[:-1] + " "
+        else:
+            out.append(cur); buf = ""
+    if buf:
+        out.append(buf)
+    return "\n".join(out)
+
+
 def _unpinned_pip(text):
+    """Genuinely unpinned named-package installs. Exempt (all legitimately pinned or
+    not-a-package): flags, local/editable installs (`.`/`-e`), requirement/constraint
+    FILES and their arguments (`-r req.txt` — trusted to pin), URLs/VCS refs, offline
+    (`--no-index`), version-constrained tokens, and the installer bootstrap trio."""
     pkgs = []
-    for m in PIP_RE.finditer(text):
-        for tok in m.group(1).split():
+    for m in PIP_RE.finditer(_command_text(text)):
+        # `--no-index` / `--find-links <dir>` => offline install from a local wheelhouse,
+        # which is reproducible; don't flag anything in that command.
+        if re.search(r"--no-index\b", m.group(1)):
+            continue
+        toks = m.group(1).split()
+        skip_next = False
+        for tok in toks:
+            if tok.startswith("#"):
+                break                     # inline shell comment — rest is not packages
+            if skip_next:
+                skip_next = False
+                continue
+            if tok in _PIP_ARG_FLAGS:
+                skip_next = True          # its argument is a file/dir, not a package
+                continue
+            if "=" in tok and tok.split("=", 1)[0] in ("--requirement", "--constraint"):
+                continue                  # --requirement=req.txt form
             if tok.startswith("-") or tok in (".", "..") or "/" in tok or "://" in tok:
-                continue  # flags, local installs, requirement files, URLs
+                continue                  # flags, local installs, requirement files, URLs
             if any(op in tok for op in ("==", ">=", "<=", "~=", "@", "<", ">")):
-                continue  # version-constrained
+                continue                  # version-constrained
+            if tok.split("[", 1)[0].lower() in _PIP_BOOTSTRAP:
+                continue                  # installer bootstrap
             if re.match(r"^[A-Za-z0-9_.\[\]-]+$", tok):
                 pkgs.append(tok)
     return pkgs
@@ -247,9 +295,14 @@ def check_task(name, root):
         shown = pip[:6]
         out.append(finding(name, "dockerfile", WARN, "unpinned-pip",
                            detail=f"pip install without a version pin: {shown}"
-                                  f"{' …' if len(pip) > 6 else ''} — non-reproducible.",
+                                  f"{' …' if len(pip) > 6 else ''}. Spec expects external deps "
+                                  "pinned where the ecosystem supports it (reproducible builds), "
+                                  "but this is Dockerfile hygiene, not a task-breaking defect — "
+                                  "advisory, like apt-consolidation/.dockerignore. (The hard rule "
+                                  "is FROM-by-digest, enforced separately as blocking.)",
                            location=loc,
-                           fix="Pin each package (`pkg==x.y.z`) or use a locked requirements file."))
+                           fix="Pin each package (`pkg==x.y.z`) or install from a locked "
+                               "requirements file (`-r requirements.txt` with pinned entries)."))
 
     url = ADD_URL.search(text)
     if url:
@@ -301,12 +354,12 @@ def check_task(name, root):
                                    "or COPY the extracted files directly."))
             break
 
-    # MAI contractual rule: their infra overrides container startup (replaces it
+    # a client contractual rule: their infra overrides container startup (replaces it
     # with `sleep infinity`), so a task that relies on ENTRYPOINT to bring up a
     # service silently fails there. Use CMD only / start services in solve.sh.
     if re.search(r"^\s*ENTRYPOINT\b", text, re.M):
         out.append(finding(name, "dockerfile", FAIL, "dockerfile-entrypoint",
-                           detail="Dockerfile sets ENTRYPOINT — client infra (e.g. MAI) "
+                           detail="Dockerfile sets ENTRYPOINT — some client infra "
                                   "overrides startup with `sleep infinity`, so anything "
                                   "ENTRYPOINT launches never comes up.",
                            location=loc,

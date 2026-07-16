@@ -21,7 +21,7 @@ import json
 import os
 from collections import Counter, defaultdict
 
-from common import (PASS, WARN, FAIL, AREAS, worst, layer_of,
+from common import (PASS, WARN, FAIL, AREAS, worst, layer_of, is_blocking,
                     REVIEWER_DIMS, coverage_gaps, dimension_area)
 
 # columns shown in the CSV, one per finding area, grouped by QC layer:
@@ -96,7 +96,7 @@ def reconcile(findings):
         # independent anti-cheat defense (recompute / mutated-rerun / source-grep —
         # check_verifier_defenses `verifier-defended`), the agent cannot forge that
         # defense, so the FAIL is a candidate, not a proof: down-grade to WARN for
-        # the runtime gate to confirm. Validated on the cognition delivery — every
+        # the runtime gate to confirm. Validated on a prior delivery — every
         # runtime-CONFIRMED hack was `verifier-undefended`; the defended ones
         # (daemon-cert-pipeline, mpi-thread-thrashing, stale-ddp-ensemble-state)
         # were all refuted. Zero recall loss, removes the dominant FP class.
@@ -172,13 +172,20 @@ def verdicts(tasks):
             sevs = [f["severity"] for f in areas.get(col, [])]
             row[col] = worst(sevs) if sevs else ""
         overall = worst([v for v in row.values() if v])
-        crit = []
+        crit, blk, adv = [], [], []
         for col in COLS:
             for f in areas.get(col, []):
                 if f["severity"] == FAIL:
-                    crit.append(f.get("title") or f.get("detail", "")[:60])
+                    title = f.get("title") or f.get("detail", "")[:60]
+                    crit.append(title)
+                    (blk if is_blocking(f) else adv).append(title)
         row["overall"] = overall or PASS
+        # calibrated verdict: FAIL only if a BLOCKING-class defect remains; advisory
+        # FAILs (hygiene) don't fail delivery. This reproduces the delivery run.
+        row["blocking"] = FAIL if blk else (WARN if adv else PASS)
         row["critical_issues"] = "; ".join(sorted(set(crit)))
+        row["blocking_issues"] = "; ".join(sorted(set(blk)))
+        row["advisory_issues"] = "; ".join(sorted(set(adv)))
         rows[task] = row
     return rows
 
@@ -186,11 +193,13 @@ def verdicts(tasks):
 def write_csv(rows, path):
     with open(path, "w", newline="") as f:
         w = csv.writer(f)
-        w.writerow(["task"] + COLS + ["overall", "critical_issues"])
+        w.writerow(["task"] + COLS +
+                   ["overall", "blocking", "critical_issues", "blocking_issues", "advisory_issues"])
         for task in sorted(rows):
             r = rows[task]
             w.writerow([task] + [r[c] for c in COLS] +
-                       [r["overall"], r["critical_issues"]])
+                       [r["overall"], r["blocking"], r["critical_issues"],
+                        r.get("blocking_issues", ""), r.get("advisory_issues", "")])
 
 
 def _flat(s):

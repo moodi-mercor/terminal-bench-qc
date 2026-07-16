@@ -41,6 +41,52 @@ def worst(severities):
     return out
 
 
+# ------------------------------------------------------ blocking calibration ---
+# Reflection delivery calibration. `overall` in the CSV is the RAW worst-of verdict
+# (what a client's un-calibrated LLM pass sees); `blocking` is the calibrated verdict
+# (what actually fails delivery).
+#
+# DESIGN: block by default, downgrade only an explicit advisory DENYLIST — the inverse
+# of an allowlist. This is deliberate and load-bearing:
+#   * The semantic reviewer/adversary (judge.py) emits OPEN-VOCABULARY titles — the LLM
+#     coins the defect name (untested-requirement, oracle-contract-violation,
+#     contract-contradiction, brittle-string-match, ...). An allowlist can never
+#     enumerate those, so an allowlist silently downgrades the ENTIRE semantic layer to
+#     advisory. A denylist keeps every semantic FAIL blocking, as it must be.
+#   * Any NEW static FAIL title a future check adds blocks by default (fail-safe), rather
+#     than silently passing until someone remembers to allowlist it.
+# So a FAIL blocks UNLESS its title is in ADVISORY_FAIL below. WARN/PASS never block.
+#
+# ADVISORY_FAIL = FAIL classes the client explicitly tolerates AND that cannot affect
+# grading integrity, difficulty, reproducibility, or leakage — purely cosmetic. Anything
+# that could touch those (leftover-generator, uncleaned-setup-script, cpus-nonpositive,
+# category mismatch, unpinned base image, weak/absent assertions, contract defects, ...)
+# is NOT here and therefore blocks. Note: split-apt (`apt-not-consolidated`), unpinned-pip
+# (`unpinned-pip`) and `oracle-runtime-install` are already emitted as WARN by their
+# checks, so they never block and don't need listing. Keep this set in exact sync with the
+# delivery run so results are reproducible across whoever runs the skill.
+ADVISORY_FAIL = {
+    # solve.sh / Dockerfile authoring style the client waved through (heredoc, length,
+    # bash+python mix) — no effect on what is graded.
+    "solve-embedded-heredoc", "dockerfile-heredoc-source",
+    "solve-too-long", "mixed-bash-python-solve",
+    # a shell builtin used where native Python would do (client: "bash-native") — style.
+    "bash-op-doable-natively",
+    # cosmetic packaging residue — no grading/leakage impact.
+    "missing-dockerignore", "pycache-residue-after-script-removal",
+    # metadata completeness gaps that do not affect grading or difficulty.
+    "missing-tags", "missing-junior-time",
+}
+
+
+def is_blocking(finding):
+    """A FAIL blocks acceptance UNLESS its title is an explicitly-tolerated advisory
+    hygiene class (ADVISORY_FAIL). WARN/PASS never block. Blocking-by-default is required
+    because the semantic reviewer emits open-vocabulary titles no allowlist could cover."""
+    return (finding.get("severity") == FAIL
+            and finding.get("title") not in ADVISORY_FAIL)
+
+
 # ------------------------------------------------------------- dimensions ---
 # The QC dimensions every task must be assessed on before it can be called clean.
 # This is the master checklist (see QC_CHECKLIST.md): each dimension names the tool

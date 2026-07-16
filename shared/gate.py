@@ -12,9 +12,11 @@ sticky and a later layer's PASS can never downgrade it. This gate reads the merg
 verdict and partitions the task set so a defect caught in one layer never flows
 downstream mislabeled as clean:
 
-  quarantine.txt — tasks whose overall verdict is FAIL, tagged with the layer + the
-                   check that caught them. They are pulled; they do NOT advance.
-  promote.txt    — the surviving tasks (PASS, and WARN unless --quarantine-warn).
+  quarantine.txt — tasks whose CALIBRATED `blocking` verdict is FAIL (they carry a
+                   blocking-class defect), tagged with the layer + the check that caught
+                   them. They are pulled; they do NOT advance. (Use --raw-verdict to gate
+                   on the un-calibrated `overall` instead.)
+  promote.txt    — the surviving tasks (PASS, and advisory-only WARN unless --quarantine-warn).
                    This is the input the NEXT layer runs on — which also saves cost,
                    since the expensive layers only see tasks that are still clean.
 
@@ -33,17 +35,23 @@ import json
 import os
 from collections import defaultdict
 
-from common import FAIL, WARN, layer_of
+from common import FAIL, WARN, layer_of, is_blocking
 import aggregate
 
 
 def partition(findings_dir, quarantine_warn=False, require_complete=False,
-              require_adversary=True, require_behavioral=True):
+              require_adversary=True, require_behavioral=True, raw_verdict=False):
     """Return (quarantine, promote, by_layer) from a cumulative findings dir.
 
     quarantine: list of (task, [layers], [defect titles]) for blocked tasks.
     promote:    sorted list of task names that advance to the next layer.
     by_layer:   {layer: count} of quarantined tasks, for the summary.
+
+    The pass/quarantine decision is made on the CALIBRATED `blocking` verdict
+    (common.is_blocking): a task is quarantined iff it carries a blocking-class defect.
+    Advisory-only FAILs (ADVISORY_FAIL) and WARNs promote. Pass raw_verdict=True to gate
+    on the un-calibrated worst-of `overall` verdict instead (every FAIL blocks) — that is
+    what an un-calibrated client LLM pass sees, useful only for comparison.
 
     With require_complete, a task missing any evidence-backed QC dimension is
     quarantined as `qc-incomplete` (same completeness gate as aggregate.py).
@@ -64,12 +72,25 @@ def partition(findings_dir, quarantine_warn=False, require_complete=False,
     tasks = aggregate.per_task(findings)
     rows = aggregate.verdicts(tasks)
 
+    verdict_key = "overall" if raw_verdict else "blocking"
     block = {FAIL, WARN} if quarantine_warn else {FAIL}
     quarantine, promote = [], []
     for task in sorted(rows):
-        if rows[task]["overall"] in block:
-            flagged = [f for area in tasks[task].values() for f in area
-                       if f["severity"] in block and f["severity"] != "PASS"]
+        if rows[task][verdict_key] in block:
+            # Explain the quarantine with the findings that actually drove the decision.
+            # Calibrated: blocking-class findings (+ advisory when --quarantine-warn also
+            # blocks WARN). Raw: any finding at a blocking severity.
+            flagged = []
+            for area in tasks[task].values():
+                for f in area:
+                    if f["severity"] == "PASS":
+                        continue
+                    if raw_verdict:
+                        keep = f["severity"] in block
+                    else:
+                        keep = is_blocking(f) or (quarantine_warn and f["severity"] in (FAIL, WARN))
+                    if keep:
+                        flagged.append(f)
             layers = sorted({layer_of(f) for f in flagged})
             titles = sorted({f.get("title", "") for f in flagged if f.get("title")})
             quarantine.append((task, layers, titles))
@@ -88,7 +109,11 @@ def main():
     ap.add_argument("findings_dir")
     ap.add_argument("--out-dir", default=None)
     ap.add_argument("--quarantine-warn", action="store_true",
-                    help="also quarantine WARN tasks (default: only FAIL blocks; WARN promotes)")
+                    help="also quarantine WARN tasks (default: only blocking FAIL blocks; WARN promotes)")
+    ap.add_argument("--raw-verdict", action="store_true",
+                    help="gate on the un-calibrated worst-of `overall` verdict (every FAIL "
+                         "blocks, incl. advisory hygiene) instead of the calibrated `blocking` "
+                         "verdict. For comparison with an un-calibrated client LLM pass.")
     ap.add_argument("--require-complete", action="store_true",
                     help="quarantine any task missing an evidence-backed QC dimension "
                          "(qc-incomplete) — six reviewer dims + adversary cheat-vector + the "
@@ -105,7 +130,8 @@ def main():
         args.findings_dir, args.quarantine_warn,
         require_complete=args.require_complete,
         require_adversary=not args.no_require_adversary,
-        require_behavioral=not args.no_require_behavioral)
+        require_behavioral=not args.no_require_behavioral,
+        raw_verdict=args.raw_verdict)
 
     qpath = os.path.join(out_dir, "quarantine.txt")
     with open(qpath, "w") as f:
